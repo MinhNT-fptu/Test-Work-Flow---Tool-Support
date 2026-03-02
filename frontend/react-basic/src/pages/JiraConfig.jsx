@@ -40,8 +40,9 @@ function JiraConfig() {
             setIsTesting(true);
 
             const res = await fetch(
-                `${API_URL}/${groupId}/jira-config/test`,
+                `${API_URL}/${groupId}/jira/test-connection`,
                 {
+                    method: "POST",
                     headers: {
                         Authorization: `Bearer ${localStorage.getItem("token")}`,
                     },
