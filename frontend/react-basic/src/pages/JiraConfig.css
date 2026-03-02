@@ -116,3 +116,11 @@
   font-weight: 500;
 }
 
+.success-text {
+    color: #16a34a; 
+    font-weight: 600;
+}
+
+.error-text {
+    color: #dc2626; 
+}

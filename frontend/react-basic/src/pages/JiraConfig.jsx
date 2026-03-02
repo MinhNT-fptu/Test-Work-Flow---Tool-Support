@@ -68,11 +68,11 @@ function JiraConfig() {
 
             // BE nên trả projectName / projectKey
             setTestResult(
-                ` Connected successfully! Project: ${data.projectKey} - ${data.projectName}`
+                `Connected successfully! Project: ${data.key} - ${data.name}`
             );
 
         } catch {
-            setTestResult("❌ Network error while testing connection.");
+            setTestResult("Network error while testing connection.");
         } finally {
             setIsTesting(false);
         }
@@ -89,7 +89,7 @@ function JiraConfig() {
             if (res.ok) {
                 const data = await res.json();
 
-                setConfig(data);    
+                setConfig(data);
                 setForm({
                     baseUrl: data.baseUrl || "",
                     projectKey: data.projectKey || "",
@@ -142,7 +142,7 @@ function JiraConfig() {
                 setError(data.message || "Save failed");
                 return;
             }
-                
+
             const cfg = data;
 
             setConfig(cfg);
@@ -174,7 +174,17 @@ function JiraConfig() {
 
             {error && <div className="error">{error}</div>}
             {success && <div className="success">{success}</div>}
-            {testResult && <div className="test-result">{testResult}</div>}
+            {testResult && (
+                <div
+                    className={
+                        testResult.startsWith("Connected")
+                            ? "test-result success-text"
+                            : "test-result error-text"
+                    }
+                >
+                    {testResult}
+                </div>
+            )}
 
             {config && !isEditing ? (
                 <div className="config-view">
