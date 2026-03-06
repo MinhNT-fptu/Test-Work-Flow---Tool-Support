@@ -58,6 +58,16 @@ public class Task {
     @Column(name = "jira_issue_key", length = 50, unique = true)
     private String jiraIssueKey;
 
+    /**
+     * Self-reference FK cho sub-tasks.
+     * Story (top-level task) có parentTask = null.
+     * Sub-task có parentTask trỏ tới Story tương ứng.
+     * Mapping với cột parent_task_id trong DB.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "parent_task_id")
+    private Task parentTask;
+
     @PrePersist
     protected void onCreate() {
         if (createdAt == null) {

@@ -27,7 +27,7 @@ public class JiraClient {
     private final RestTemplate restTemplate;
 
     private static final List<String> BULK_FIELDS = List.of(
-            "summary", "description", "issuetype", "status", "priority", "assignee", "updated", "labels");
+            "summary", "description", "issuetype", "status", "priority", "assignee", "updated", "labels", "parent");
 
     /**
      * Gọi Jira REST API v3 để lấy thông tin project.
