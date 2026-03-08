@@ -20,11 +20,25 @@ public class JiraFields {
     private Object description;
 
     private JiraName issuetype;
+
+    /**
+     * Status kèm statusCategory để mapping sang internal status code.
+     * statusCategory.key: "new" | "indeterminate" | "done"
+     */
     private JiraName status;
+
     private JiraName priority; // nullable
     private JiraAssignee assignee; // nullable
     private String updated;
 
     /** Labels attached to the issue. */
     private List<String> labels;
+
+    /**
+     * Parent reference – có mặt khi issue là Story (parent = Epic) hoặc Sub-task
+     * (parent = Story).
+     * Jira Cloud đặt Epic link qua field này cho Story, và Story link cho Sub-task.
+     * Null-safe: nếu không có parent thì field này null.
+     */
+    private JiraParentRef parent;
 }

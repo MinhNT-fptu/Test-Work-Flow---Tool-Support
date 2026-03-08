@@ -1,17 +1,23 @@
 package com.swp391.backend.controller;
 
 import com.swp391.backend.common.ApiResponse;
+import com.swp391.backend.dto.response.JiraBoardDto;
 import com.swp391.backend.dto.response.JiraIssueExportDto;
 import com.swp391.backend.dto.response.JiraIssuePageResponse;
+import com.swp391.backend.dto.response.JiraSprintDto;
 import com.swp391.backend.dto.response.JiraSprintResponse;
 import com.swp391.backend.dto.response.JiraVersionResponse;
+import com.swp391.backend.dto.response.SyncResultResponse;
 import com.swp391.backend.entity.User;
 import com.swp391.backend.exception.BusinessException;
 import com.swp391.backend.integration.jira.JiraJqlBuilder.FilterType;
 import com.swp391.backend.repository.UserRepository;
 import com.swp391.backend.service.GroupService;
+import com.swp391.backend.service.JiraBoardService;
 import com.swp391.backend.service.JiraIssueService;
 import com.swp391.backend.service.JiraLabelService;
+import com.swp391.backend.service.JiraManualSyncService;
+import com.swp391.backend.service.JiraSprintByBoardService;
 import com.swp391.backend.service.JiraSprintService;
 import com.swp391.backend.service.JiraVersionService;
 import lombok.RequiredArgsConstructor;
@@ -24,7 +30,8 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 /**
- * REST controller for Jira-related operations (issues export, metadata, etc.).
+ * REST controller for Jira-related operations (issues export, metadata, manual
+ * sync, etc.).
  * All endpoints require LEADER or ADMIN role within the group.
  */
 @RestController
@@ -36,6 +43,9 @@ public class JiraController {
     private final JiraSprintService jiraSprintService;
     private final JiraVersionService jiraVersionService;
     private final JiraLabelService jiraLabelService;
+    private final JiraBoardService jiraBoardService;
+    private final JiraSprintByBoardService jiraSprintByBoardService;
+    private final JiraManualSyncService jiraManualSyncService;
     private final GroupService groupService;
     private final UserRepository userRepository;
 
@@ -166,6 +176,81 @@ public class JiraController {
         return ResponseEntity.ok(ApiResponse.success(labels));
     }
 
+    // ── (4) List Boards ──────────────────────────────────────────────────────
+
+    /**
+     * List Jira boards for the group's configured project.
+     *
+     * <p>
+     * Returns a minimal list of boards (id + name) so the FE can let the user
+     * select a board before fetching sprints.
+     */
+    @GetMapping("/{groupId}/boards")
+    public ResponseEntity<ApiResponse<List<JiraBoardDto>>> getBoards(
+            @PathVariable Long groupId) {
+
+        checkAuthority(groupId);
+
+        List<JiraBoardDto> boards = jiraBoardService.listBoards(groupId);
+        return ResponseEntity.ok(ApiResponse.success(boards));
+    }
+
+    // ── (5) List Sprints by Board ────────────────────────────────────────────
+
+    /**
+     * List Jira sprints for an explicitly selected board.
+     *
+     * <p>
+     * Unlike {@code GET /{groupId}/sprints}, the caller provides the boardId
+     * directly instead of letting the service auto-pick the first board.
+     *
+     * <p>
+     * Query params:
+     * <ul>
+     * <li>state – comma-separated sprint states (default: "active,future")</li>
+     * </ul>
+     */
+    @GetMapping("/{groupId}/boards/{boardId}/sprints")
+    public ResponseEntity<ApiResponse<List<JiraSprintDto>>> getSprintsByBoard(
+            @PathVariable Long groupId,
+            @PathVariable Long boardId,
+            @RequestParam(required = false) String state) {
+
+        checkAuthority(groupId);
+
+        List<JiraSprintDto> sprints = jiraSprintByBoardService.listSprintsByBoard(groupId, boardId, state);
+        return ResponseEntity.ok(ApiResponse.success(sprints));
+    }
+
+    // ── (6) Manual Sync Jira → Requirement/Task ──────────────────────────────
+
+    /**
+     * Trigger đồng bộ thủ công 1 chiều: Jira → Requirement/Task hierarchy.
+     *
+     * <p>
+     * Mapping rules:
+     * <ul>
+     * <li>Epic → Requirement</li>
+     * <li>Story → Task (parent_task_id = null)</li>
+     * <li>Sub-task → child Task (parent_task_id = Story Task)</li>
+     * </ul>
+     *
+     * <p>
+     * Concurrency: trả 409 nếu đang có sync JIRA RUNNING cho cùng group.
+     */
+    @PostMapping("/{groupId}/sync")
+    public ResponseEntity<ApiResponse<SyncResultResponse>> syncNow(
+            @PathVariable Long groupId) {
+
+        checkAuthority(groupId);
+
+        // Lấy thông tin user hiện tại để làm createdBy cho Requirement mới
+        User currentUser = getCurrentUser();
+
+        SyncResultResponse result = jiraManualSyncService.syncNow(groupId, currentUser.getUserId());
+        return ResponseEntity.ok(ApiResponse.success(result));
+    }
+
     // ── Permission check ──────────────────────────────────────────────────────
 
     private void checkAuthority(Long groupId) {
@@ -185,5 +270,14 @@ public class JiraController {
         if (!isAuthorized) {
             throw new AccessDeniedException("Access denied. Leader or Admin role required for this group.");
         }
+    }
+
+    private User getCurrentUser() {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null) {
+            throw new AccessDeniedException("Unauthorized");
+        }
+        return userRepository.findByUsername(auth.getName())
+                .orElseThrow(() -> new AccessDeniedException("User not found"));
     }
 }

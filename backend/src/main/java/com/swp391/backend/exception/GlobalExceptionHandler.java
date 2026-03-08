@@ -71,7 +71,8 @@ public class GlobalExceptionHandler {
             msg = "";
         }
 
-        // BR-01: Each student may join at most one group in the same course and semester
+        // BR-01: Each student may join at most one group in the same course and
+        // semester
         if (containsIgnoreCase(msg, "UQ_OneGroupPerStudentPerTerm")) {
             return ResponseEntity.status(409)
                     .body(ApiResponse.error(409,
@@ -98,13 +99,28 @@ public class GlobalExceptionHandler {
     }
 
     private boolean containsIgnoreCase(String text, String keyword) {
-        if (text == null || keyword == null) return false;
+        if (text == null || keyword == null)
+            return false;
         return text.toLowerCase().contains(keyword.toLowerCase());
     }
 
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
-    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(org.springframework.security.access.AccessDeniedException ex) {
+    public ResponseEntity<ApiResponse<Object>> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex) {
         return ResponseEntity.status(403).body(ApiResponse.error(403, "Access Denied"));
+    }
+
+    /**
+     * Handler cho ResponseStatusException – được dùng bởi SyncLogService để trả 409
+     * "Sync is running".
+     * Đảm bảo format ApiResponse nhất quán với các exception khác.
+     */
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    public ResponseEntity<ApiResponse<Void>> handleResponseStatusException(
+            org.springframework.web.server.ResponseStatusException ex) {
+        int status = ex.getStatusCode().value();
+        String reason = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+        return ResponseEntity.status(status).body(ApiResponse.error(status, reason));
     }
 
 }

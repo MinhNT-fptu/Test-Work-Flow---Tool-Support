@@ -6,17 +6,13 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 /**
- * Response DTO for a Jira Sprint (returned to API consumers).
+ * Minimal response DTO for a Jira Board (id + name only).
  */
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-public class JiraSprintResponse {
+public class JiraBoardDto {
     private Long id;
     private String name;
-    private String state;
-    private String startDate;
-    private String endDate;
-    private String completeDate;
 }
