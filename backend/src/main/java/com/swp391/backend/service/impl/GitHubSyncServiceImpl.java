@@ -16,7 +16,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
@@ -24,9 +23,30 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
+/**
+ * Triển khai đồng bộ commit từ GitHub về database.
+ *
+ * <h3>Luồng xử lý sync</h3>
+ * 
+ * <pre>
+ *  begin(groupId, "GITHUB")
+ *      ├─ [409 CONFLICT] → throw ngay lên Controller (không có syncId → không cần end())
+ *      └─ [OK] → syncId được lưu
+ *           try { doSync() }          → end(SUCCESS)
+ *           catch (ResponseStatusEx)  { end(FAILED) → rethrow }
+ *           catch (Exception)         { end(FAILED) → wrap 500 → rethrow }
+ * </pre>
+ *
+ * <p>
+ * <b>Không có @Transactional ở method level</b> vì mỗi lệnh gọi
+ * {@link SyncLogService} đã dùng REQUIRES_NEW transaction riêng.
+ * Nếu bọc thêm transaction cha, end(FAILED) trong catch không commit được
+ * khi transaction đang trong trạng thái rollback-only.
+ * </p>
+ */
+@Slf4j
 @Service
 @RequiredArgsConstructor
-@Slf4j
 public class GitHubSyncServiceImpl implements GitHubSyncService {
 
     private final SyncLogService syncLogService;
@@ -37,106 +57,123 @@ public class GitHubSyncServiceImpl implements GitHubSyncService {
     private final GitCommitRepository gitCommitRepository;
     private final UserRepository userRepository;
 
+    // -------------------------------------------------------------------------
+    // syncNow
+    // -------------------------------------------------------------------------
+
     @Override
-    @Transactional
     public SyncResultResponse syncNow(Long groupId) {
-        // Concurrency Guard
+        // ── Bước 1: Bắt đầu SyncLog ─────────────────────────────────────────
+        // Nếu begin() ném 409 CONFLICT (đang có RUNNING), exception đi thẳng lên
+        // Controller mà KHÔNG qua các catch bên dưới → không cần gọi end().
         SyncLog syncLog = syncLogService.begin(groupId, "GITHUB");
+        Long syncId = syncLog.getId();
+
         int insertedCount = 0;
         int updatedCount = 0;
-        String errorMessage = null;
 
         try {
-            // Token & Repo
+            // ── Bước 2: Lấy cấu hình & giải mã token ─────────────────────
             IntegrationConfig config = configRepository
                     .findByGroupIdAndIntegrationTypeId(groupId, IntegrationTypeIds.GITHUB)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
-                            "GitHub integration not configured"));
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.NOT_FOUND, "GitHub integration not configured"));
 
             if (config.getRepoFullName() == null || config.getTokenEncrypted() == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Incomplete GitHub configuration");
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "Incomplete GitHub configuration");
             }
 
             String token = tokenCryptoService.decryptFromBytes(config.getTokenEncrypted());
 
-            Repository repo = repositoryRepository.findByGroupIdAndFullName(groupId, config.getRepoFullName())
-                    .orElseGet(() -> {
-                        Repository newRepo = Repository.builder()
-                                .groupId(groupId)
-                                .fullName(config.getRepoFullName())
-                                .build();
-                        return repositoryRepository.save(newRepo);
-                    });
+            // ── Bước 3: Lấy/tạo Repository record ───────────────────────
+            Repository repo = repositoryRepository
+                    .findByGroupIdAndFullName(groupId, config.getRepoFullName())
+                    .orElseGet(() -> repositoryRepository.save(
+                            Repository.builder()
+                                    .groupId(groupId)
+                                    .fullName(config.getRepoFullName())
+                                    .build()));
 
-            // Fetch list of commits (Pagination is handled entirely inside
-            // GitHubClient.fetchAllCommits)
+            // ── Bước 4: Gọi GitHub API (có phân trang bên trong) ─────────
             List<GitHubCommitDTO> commits = gitHubClient.fetchAllCommits(config.getRepoFullName(), token);
 
-            for (GitHubCommitDTO commitDto : commits) {
-                Optional<GitCommit> existingOpt = gitCommitRepository.findByRepoIdAndSha(repo.getRepoId(),
-                        commitDto.getSha());
+            // ── Bước 5: Upsert commits ───────────────────────────────────
+            for (GitHubCommitDTO dto : commits) {
+                // Bỏ qua commit không có SHA (dữ liệu dị thường từ API)
+                if (dto.getSha() == null) {
+                    log.warn("[GitHub Sync] Skipping commit with null SHA, group={}", groupId);
+                    continue;
+                }
 
-                GitCommit gitCommit = existingOpt.orElseGet(() -> GitCommit.builder()
+                // Bỏ qua commit không có date (null sẽ vi phạm NOT NULL constraint)
+                if (dto.getCommit() == null
+                        || dto.getCommit().getAuthor() == null
+                        || dto.getCommit().getAuthor().getDate() == null) {
+                    log.warn("[GitHub Sync] Skipping commit {} – missing author/date info", dto.getSha());
+                    continue;
+                }
+
+                Optional<GitCommit> existingOpt = gitCommitRepository.findByRepoIdAndSha(repo.getRepoId(),
+                        dto.getSha());
+
+                GitCommit commit = existingOpt.orElseGet(() -> GitCommit.builder()
                         .repoId(repo.getRepoId())
-                        .sha(commitDto.getSha())
+                        .sha(dto.getSha())
                         .build());
 
-                // Set author information
-                if (commitDto.getCommit() != null && commitDto.getCommit().getAuthor() != null) {
-                    gitCommit.setAuthorName(commitDto.getCommit().getAuthor().getName());
-                    gitCommit.setAuthorEmail(commitDto.getCommit().getAuthor().getEmail());
+                commit.setAuthorName(dto.getCommit().getAuthor().getName());
+                commit.setAuthorEmail(dto.getCommit().getAuthor().getEmail());
+                commit.setCommitDate(LocalDateTime.parse(
+                        dto.getCommit().getAuthor().getDate(),
+                        DateTimeFormatter.ISO_DATE_TIME));
+                commit.setMessage(dto.getCommit().getMessage());
 
-                    if (commitDto.getCommit().getAuthor().getDate() != null) {
-                        gitCommit.setCommitDate(LocalDateTime.parse(commitDto.getCommit().getAuthor().getDate(),
-                                DateTimeFormatter.ISO_DATE_TIME));
-                    }
+                if (dto.getAuthor() != null) {
+                    commit.setAuthorLogin(dto.getAuthor().getLogin());
                 }
 
-                if (commitDto.getAuthor() != null) {
-                    gitCommit.setAuthorLogin(commitDto.getAuthor().getLogin());
+                // Liên kết với User nội bộ nếu email khớp
+                if (commit.getAuthorEmail() != null) {
+                    userRepository.findByEmailIgnoreCase(commit.getAuthorEmail())
+                            .ifPresent(u -> commit.setAuthorUserId(u.getUserId()));
                 }
 
-                if (commitDto.getCommit() != null) {
-                    gitCommit.setMessage(commitDto.getCommit().getMessage());
-                }
+                gitCommitRepository.save(commit);
 
-                // If email matches User, set author_user_id
-                if (gitCommit.getAuthorEmail() != null) {
-                    Optional<User> userOpt = userRepository.findByEmailIgnoreCase(gitCommit.getAuthorEmail());
-                    userOpt.ifPresent(user -> gitCommit.setAuthorUserId(user.getUserId()));
-                }
-
-                gitCommitRepository.save(gitCommit);
-
-                // Counters
-                if (existingOpt.isPresent()) {
+                if (existingOpt.isPresent())
                     updatedCount++;
-                } else {
+                else
                     insertedCount++;
-                }
             }
 
-        } catch (Exception e) {
-            log.error("GitHub sync failed for group {}: {}", groupId, e.getMessage());
-            errorMessage = e.getMessage();
-            if (e instanceof ResponseStatusException) {
-                throw e;
-            }
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Sync failed: " + e.getMessage());
-        } finally {
-            if (errorMessage == null) {
-                syncLogService.end(syncLog.getId(), SyncStatus.SUCCESS, insertedCount, updatedCount,
-                        "Synced successfully");
-            } else {
-                syncLogService.end(syncLog.getId(), SyncStatus.FAILED, insertedCount, updatedCount, errorMessage);
-            }
+            // ── Bước 6: Kết thúc thành công ─────────────────────────────
+            String successMsg = "Synced " + (insertedCount + updatedCount) + " commit(s) successfully";
+            syncLogService.end(syncId, SyncStatus.SUCCESS, insertedCount, updatedCount, successMsg);
+            log.info("[GitHub Sync] group={} SUCCESS – inserted={}, updated={}", groupId, insertedCount, updatedCount);
+
+            return SyncResultResponse.builder()
+                    .status("SUCCESS")
+                    .insertedCount(insertedCount)
+                    .updatedCount(updatedCount)
+                    .message(successMsg)
+                    .build();
+
+        } catch (ResponseStatusException ex) {
+            // Lỗi có HTTP status rõ ràng (404 config, 400 bad config, 401 token,
+            // 429 rate-limit từ GitHubClient, 409 concurrency guard…)
+            String reason = ex.getReason() != null ? ex.getReason() : ex.getMessage();
+            log.error("[GitHub Sync] group={} FAILED [{}]: {}", groupId, ex.getStatusCode(), reason);
+            syncLogService.end(syncId, SyncStatus.FAILED, insertedCount, updatedCount, reason);
+            throw ex; // giữ nguyên HTTP status, trả lên Controller
+
+        } catch (Exception ex) {
+            // Lỗi không mong đợi: network timeout, decrypt fail, DB error…
+            String msg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+            log.error("[GitHub Sync] group={} unexpected error: {}", groupId, msg, ex);
+            syncLogService.end(syncId, SyncStatus.FAILED, insertedCount, updatedCount, msg);
+            throw new ResponseStatusException(
+                    HttpStatus.INTERNAL_SERVER_ERROR, "Sync failed: " + msg, ex);
         }
-
-        return SyncResultResponse.builder()
-                .status(errorMessage == null ? "SUCCESS" : "FAILED")
-                .insertedCount(insertedCount)
-                .updatedCount(updatedCount)
-                .message(errorMessage == null ? "Synced successfully" : errorMessage)
-                .build();
     }
 }
