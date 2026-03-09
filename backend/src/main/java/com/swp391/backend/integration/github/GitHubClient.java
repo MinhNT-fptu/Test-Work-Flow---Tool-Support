@@ -149,36 +149,53 @@ public class GitHubClient {
 
     @SuppressWarnings("unchecked")
     private GitHubCommitResponse mapToGitHubCommitResponse(Map<String, Object> map) {
-        Map<String, Object> commit = (Map<String, Object>) map.get("commit");
-        Map<String, Object> author = (Map<String, Object>) commit.get("author");
+        // commit và author có thể null nếu GitHub trả dữ liệu dị thường
+        Map<String, Object> commit = map.get("commit") instanceof Map<?, ?>
+                ? (Map<String, Object>) map.get("commit")
+                : null;
+        Map<String, Object> author = (commit != null && commit.get("author") instanceof Map<?, ?>)
+                ? (Map<String, Object>) commit.get("author")
+                : null;
 
         return GitHubCommitResponse.builder()
                 .sha((String) map.get("sha"))
-                .authorName((String) author.get("name"))
-                .authorEmail((String) author.get("email"))
-                .date((String) author.get("date"))
-                .message((String) commit.get("message"))
+                .authorName(author != null ? (String) author.get("name") : null)
+                .authorEmail(author != null ? (String) author.get("email") : null)
+                .date(author != null ? (String) author.get("date") : null)
+                .message(commit != null ? (String) commit.get("message") : null)
                 .build();
     }
 
     private void handleException(HttpClientErrorException e) {
         HttpStatus status = (HttpStatus) e.getStatusCode();
+
+        // Xử lý Rate Limit (403 hoặc 429)
         if (status == HttpStatus.FORBIDDEN || status == HttpStatus.TOO_MANY_REQUESTS) {
-            String rateLimitReset = e.getResponseHeaders().getFirst("x-ratelimit-reset");
+            String rateLimitReset = e.getResponseHeaders() != null
+                    ? e.getResponseHeaders().getFirst("x-ratelimit-reset")
+                    : null;
             if (rateLimitReset != null) {
                 try {
                     long resetTimestamp = Long.parseLong(rateLimitReset);
                     String formattedTime = Instant.ofEpochSecond(resetTimestamp)
                             .atZone(ZoneId.systemDefault())
                             .format(DateTimeFormatter.ofPattern("HH:mm:ss"));
-                    throw new GitHubApiException("GitHub Rate Limit exceeded. Resets at: " + formattedTime,
+                    // Ném ngay, không fall-through
+                    throw new GitHubApiException(
+                            "GitHub Rate Limit exceeded. Resets at: " + formattedTime,
                             status.value());
                 } catch (NumberFormatException nfe) {
-                    // Fallback if header is not a valid number
+                    // Header không phải số hợp lệ → fallthrough, throw generic message bên dưới
+                    throw new GitHubApiException(
+                            "GitHub Rate Limit exceeded (unknown reset time)",
+                            status.value());
                 }
             }
+            // Không có header x-ratelimit-reset → thông báo chung
+            throw new GitHubApiException("GitHub Rate Limit or Forbidden", status.value());
         }
 
+        // Các lỗi HTTP khác (401 Unauthorized, 404 Not Found…)
         String message = e.getResponseBodyAsString();
         if (message == null || message.isEmpty()) {
             message = e.getStatusText();
