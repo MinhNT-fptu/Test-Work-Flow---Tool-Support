@@ -16,26 +16,15 @@ import java.time.LocalDateTime;
  * </p>
  */
 public interface CommitStatsProjection {
-
     Long getAuthorUserId();
-
     String getAuthorFullName();
-
     String getAuthorUsername();
-
     String getAuthorName();
-
     String getAuthorEmail();
-
     String getAuthorLogin();
-
     Long getCommitCount();
-
     Long getTotalAdditions();
-
     Long getTotalDeletions();
-
     Long getTotalFilesChanged();
-
     LocalDateTime getLatestCommitDate();
 }

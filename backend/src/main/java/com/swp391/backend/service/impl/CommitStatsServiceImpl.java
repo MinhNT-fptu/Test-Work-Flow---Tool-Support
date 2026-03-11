@@ -2,7 +2,10 @@ package com.swp391.backend.service.impl;
 
 import com.swp391.backend.dto.response.CommitStatsDTO;
 import com.swp391.backend.dto.response.CommitStatsProjection;
+import com.swp391.backend.dto.response.PersonalCommitStatsDTO;
+import com.swp391.backend.dto.response.PersonalCommitStatsProjection;
 import com.swp391.backend.repository.GitCommitRepository;
+import com.swp391.backend.security.SecurityService;
 import com.swp391.backend.service.CommitStatsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -35,6 +38,7 @@ import java.util.List;
 public class CommitStatsServiceImpl implements CommitStatsService {
 
     private final GitCommitRepository gitCommitRepository;
+    private final SecurityService securityService;
 
     @Override
     @Transactional(readOnly = true)
@@ -54,5 +58,22 @@ public class CommitStatsServiceImpl implements CommitStatsService {
 
         log.debug("[CommitStats] group={} → {} author(s)", groupId, result.size());
         return result;
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PersonalCommitStatsDTO getPersonalCommitStats(Long groupId) {
+        Long userId = securityService.getCurrentUserId();
+        if (userId == null) {
+            log.warn("[CommitStats] No authenticated user found for personal stats");
+            return PersonalCommitStatsDTO.empty();
+        }
+
+        log.debug("[CommitStats] Fetching personal stats for user={}, group={}", userId, groupId);
+
+        PersonalCommitStatsProjection projection =
+                gitCommitRepository.getPersonalCommitStats(groupId, userId);
+
+        return PersonalCommitStatsDTO.from(projection);
     }
 }

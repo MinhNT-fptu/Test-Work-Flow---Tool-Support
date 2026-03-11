@@ -12,7 +12,6 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 @Builder
 public class JiraConfigRequest {
-
     @NotBlank(message = "baseUrl is required")
     private String baseUrl;
 

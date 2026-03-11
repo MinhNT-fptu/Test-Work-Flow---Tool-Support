@@ -1,6 +1,7 @@
 package com.swp391.backend.repository;
 
 import com.swp391.backend.dto.response.CommitStatsProjection;
+import com.swp391.backend.dto.response.PersonalCommitStatsProjection;
 import com.swp391.backend.entity.GitCommit;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
@@ -89,4 +90,35 @@ public interface GitCommitRepository extends JpaRepository<GitCommit, Integer> {
             ORDER BY commitCount DESC
             """, nativeQuery = true)
     List<CommitStatsProjection> getCommitStatsByGroup(@Param("groupId") Long groupId);
+
+    /**
+     * Lấy thống kê commit cá nhân dựa trên repository và người dùng.
+     *
+     * @param repoId ID của repository
+     * @param userId ID của người dùng hệ thống (đã được map)
+     * @return kết quả thống kê (duy nhất 1 dòng)
+     */
+    /**
+     * Lấy thống kê commit cá nhân dựa trên groupId và người dùng.
+     * Kết quả được tổng hợp từ tất cả repository của group đó.
+     *
+     * @param groupId ID của nhóm
+     * @param userId ID của người dùng hệ thống
+     * @return kết quả thống kê
+     */
+    @Query(value = """
+            SELECT
+                COUNT(gc.commit_id)                        AS commitCount,
+                ISNULL(SUM(ISNULL(gc.additions,     0)), 0) AS totalAdditions,
+                ISNULL(SUM(ISNULL(gc.deletions,     0)), 0) AS totalDeletions,
+                ISNULL(SUM(ISNULL(gc.files_changed, 0)), 0) AS totalFilesChanged,
+                MAX(gc.commit_date)                        AS latestCommitDate
+            FROM GitCommit gc
+            JOIN Repository r ON r.repo_id = gc.repo_id
+            WHERE r.group_id = :groupId AND gc.author_user_id = :userId
+            """,
+            nativeQuery = true)
+    PersonalCommitStatsProjection getPersonalCommitStats(
+            @Param("groupId") Long groupId,
+            @Param("userId") Long userId);
 }

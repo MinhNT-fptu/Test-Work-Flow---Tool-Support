@@ -2,6 +2,7 @@ package com.swp391.backend.controller;
 
 import com.swp391.backend.common.ApiResponse;
 import com.swp391.backend.dto.response.CommitStatsDTO;
+import com.swp391.backend.dto.response.PersonalCommitStatsDTO;
 import com.swp391.backend.service.CommitStatsService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -30,7 +31,7 @@ import java.util.List;
  * <li>Còn lại → 403 Forbidden (bắt bởi {@code GlobalExceptionHandler})</li>
  * </ul>
  */
-@Tag(name = "Commit Statistics", description = "Thống kê commit GitHub theo nhóm")
+@Tag(name = "Commit Statistics")
 @RestController
 @RequestMapping("/api/stats")
 @RequiredArgsConstructor
@@ -50,7 +51,7 @@ public class CommitStatsController {
      * @param groupId ID nhóm sinh viên
      * @return danh sách thống kê commit, sắp xếp giảm dần theo số commit
      */
-    @Operation(summary = "Lấy thống kê commit theo nhóm", description = """
+    @Operation(description = """
             Trả về thống kê commit của từng tác giả trong nhóm.
             Grouping priority: authorUserId (nếu đã map) → email → name.
             Trả về [] nếu nhóm chưa có dữ liệu commit.
@@ -58,7 +59,7 @@ public class CommitStatsController {
     @GetMapping("/commits/{groupId}")
     @PreAuthorize("@securityService.hasAccessToGroup(#groupId)")
     public ResponseEntity<ApiResponse<List<CommitStatsDTO>>> getCommitStats(
-            @Parameter(description = "ID nhóm sinh viên") @PathVariable Long groupId) {
+            @PathVariable Long groupId) {
 
         List<CommitStatsDTO> stats = commitStatsService.getCommitStats(groupId);
 
@@ -71,6 +72,25 @@ public class CommitStatsController {
                             .build());
         }
 
+        return ResponseEntity.ok(ApiResponse.success(stats));
+    }
+
+    /**
+     * Lấy thống kê commit cá nhân của người dùng đang đăng nhập trong nhóm.
+     *
+     * @param groupId ID nhóm sinh viên
+     * @return thống kê commit cá nhân
+     */
+    @Operation(
+        summary = "Lấy thống kê commit cá nhân",
+        description = "Trả về số liệu commit của chính người dùng hiện tại trong nhóm được chỉ định."
+    )
+    @GetMapping("/commits/me/{groupId}")
+    @PreAuthorize("@securityService.isStudentInGroup(#groupId)")
+    public ResponseEntity<ApiResponse<PersonalCommitStatsDTO>> getPersonalCommitStats(
+            @Parameter(description = "ID nhóm sinh viên") @PathVariable Long groupId) {
+
+        PersonalCommitStatsDTO stats = commitStatsService.getPersonalCommitStats(groupId);
         return ResponseEntity.ok(ApiResponse.success(stats));
     }
 }
