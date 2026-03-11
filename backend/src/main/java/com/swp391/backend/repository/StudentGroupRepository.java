@@ -11,12 +11,8 @@ public interface StudentGroupRepository extends JpaRepository<StudentGroup, Long
     void removeStudentGroupByGroupId(Long groupId);
 
     List<StudentGroup> findByGroupId(Long groupId);
-
     boolean existsByClassCodeAndGroupIdNot(String groupCode, Long groupId);
-
     List<StudentGroup> findByCourseCode(String courseCode);
-
     List<StudentGroup> findBySemester(String semester);
-
     List<StudentGroup> findByCourseCodeAndSemester(String courseCode, String semester);
 }

@@ -17,7 +17,7 @@ public class SecurityService {
     private final GroupMemberRepository groupMemberRepository;
     private final UserRepository userRepository;
 
-    private Long getCurrentUserId() {
+    public Long getCurrentUserId() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
             return null;
@@ -81,6 +81,26 @@ public class SecurityService {
         }
 
         return false;
+    }
+
+    /**
+     * Chỉ cho phép sinh viên thuộc nhóm truy cập.
+     * Dùng cho các endpoint "cá nhân" như xem commit của chính mình (/me).
+     * Lecturer và Admin (nếu không phải thành viên) sẽ bị chặn.
+     */
+    public boolean isStudentInGroup(Long groupId) {
+        Long userId = getCurrentUserId();
+        if (userId == null || groupId == null)
+            return false;
+
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        boolean isStudent = authentication.getAuthorities().stream()
+                .anyMatch(a -> a.getAuthority().equals("ROLE_STUDENT"));
+
+        if (!isStudent)
+            return false;
+
+        return groupMemberRepository.existsByGroup_GroupIdAndUser_UserId(groupId, userId);
     }
 
     public boolean isLecturerAssigned(Long groupId) {
