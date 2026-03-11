@@ -1,6 +1,7 @@
 package com.swp391.backend.service;
 
 import com.swp391.backend.dto.response.CommitStatsDTO;
+import com.swp391.backend.dto.response.PersonalCommitStatsDTO;
 
 import java.util.List;
 
@@ -22,4 +23,12 @@ public interface CommitStatsService {
      * @return danh sách thống kê commit theo tác giả; rỗng nếu chưa có dữ liệu
      */
     List<CommitStatsDTO> getCommitStats(Long groupId);
+
+    /**
+     * Lấy thống kê commit cá nhân của người dùng hiện tại trong một nhóm.
+     *
+     * @param groupId ID nhóm sinh viên
+     * @return thống kê cá nhân (mặc định các giá trị là 0 nếu không có dữ liệu)
+     */
+    PersonalCommitStatsDTO getPersonalCommitStats(Long groupId);
 }
