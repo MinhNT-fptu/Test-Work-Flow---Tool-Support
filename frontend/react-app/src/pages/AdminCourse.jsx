@@ -1,478 +1,468 @@
-import React, { useState } from 'react';
-import { 
-  BookOpen, 
-  Plus, 
-  UserPlus, 
-  CalendarPlus, 
-  X,
-  GraduationCap,
-  CalendarRange,
-  Search,
-  CheckCircle2,
-  AlertCircle,
-  Edit,
-  Trash2
+import React, { useState, useEffect } from 'react';
+import {
+  BookOpen, Plus, School, CalendarDays,
+  ChevronRight, ChevronDown, Trash2, Edit, X, Layers
 } from 'lucide-react';
 import './AdminCourse.css';
 
-// --- MOCK DATA ---
-const MOCK_LECTURERS = [
-  { id: 'l1', name: 'Dr. John Doe', email: 'john@university.edu' },
-  { id: 'l2', name: 'Prof. Jane Smith', email: 'jane@university.edu' },
-  { id: 'l3', name: 'Dr. Alan Turing', email: 'alan@university.edu' },
-];
-
-const MOCK_TRIMESTERS = [
-  { id: 't1', name: 'Spring 2026' },
-  { id: 't2', name: 'Summer 2026' },
-  { id: 't3', name: 'Fall 2026' },
-];
-
-const INITIAL_COURSES = [
-  { 
-    id: 1, 
-    code: 'SWP391', 
-    name: 'Software Project Management', 
-    lecturerId: 'l1', 
-    trimesterId: 't1' 
-  },
-  { 
-    id: 2, 
-    code: 'PRF192', 
-    name: 'Programming Fundamentals', 
-    lecturerId: null, 
-    trimesterId: 't1' 
-  },
-  { 
-    id: 3, 
-    code: 'PRN211', 
-    name: 'Basic Cross-Platform Application Programming', 
-    lecturerId: 'l2', 
-    trimesterId: null 
-  },
-];
-// -----------------
+const COURSE_API   = '/api/courses';
+const SEMESTER_API = '/api/semesters';
+const CLASS_API    = '/api/classes';
 
 function AdminCourse() {
-  const [courses, setCourses] = useState(INITIAL_COURSES);
-  
-  // Modal States
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [isAssignLecturerModalOpen, setIsAssignLecturerModalOpen] = useState(false);
-  const [isAssignTrimesterModalOpen, setIsAssignTrimesterModalOpen] = useState(false);
-  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
-  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
-  
-  // Selected items for Assignment/Edit/Delete
-  const [selectedCourse, setSelectedCourse] = useState(null);
+  const token = localStorage.getItem('token');
+  const h = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-  // Form States
-  const [newCourseCode, setNewCourseCode] = useState('');
-  const [newCourseName, setNewCourseName] = useState('');
+  // ── Data ──────────────────────────────────────────
+  const [courses,   setCourses]   = useState([]);
+  const [semesters, setSemesters] = useState([]);
+  const [classes,   setClasses]   = useState([]);   // all classes (flat)
+
+  // ── Expanded rows ──────────────────────────────────
+  const [expandedCourseId, setExpandedCourseId] = useState(null);
+
+  // ── Modals ─────────────────────────────────────────
+  const [modal, setModal] = useState(null);
+  // 'createCourse' | 'editCourse' | 'createClass' | 'editClass' | 'assignLecturer'
+
+  // ── Forms ──────────────────────────────────────────
+  const [courseForm,   setCourseForm]   = useState({ courseCode: '', courseName: '' });
+  const [classForm,    setClassForm]    = useState({ classCode: '', courseId: '', semesterId: '' });
+  const [lecturers,    setLecturers]    = useState([]);
+  const [editTarget,   setEditTarget]   = useState(null); // course or class being edited
+  const [assignTarget, setAssignTarget] = useState(null); // class being assigned
   const [selectedLecturerId, setSelectedLecturerId] = useState('');
-  const [selectedTrimesterId, setSelectedTrimesterId] = useState('');
 
-  // --- HANDLERS ---
-  const handleCreateCourse = (e) => {
+  const [error,   setError]   = useState('');
+  const [loading, setLoading] = useState(false);
+
+  // ── Init ──────────────────────────────────────────
+  useEffect(() => {
+    fetchAll();
+  }, []);
+
+  const fetchAll = async () => {
+    setLoading(true);
+    try {
+      const [cRes, sRes, clRes, lRes] = await Promise.all([
+        fetch(COURSE_API,   { headers: h }),
+        fetch(SEMESTER_API, { headers: h }),
+        fetch(`${CLASS_API}?size=999`, { headers: h }),
+        fetch('/api/admin/users?roleCode=LECTURER&page=0&size=999', { headers: h }),
+      ]);
+      const [cd, sd, cld, ld] = await Promise.all([
+        cRes.json(), sRes.json(), clRes.json(), lRes.json()
+      ]);
+      setCourses(cd.data   || []);
+      setSemesters(sd.data || []);
+      setClasses(cld.data?.content || []);
+      const lecData = ld.data;
+      setLecturers(lecData?.content || (Array.isArray(lecData) ? lecData : []));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Helpers ────────────────────────────────────────
+  const classesOf = (courseId) =>
+    classes.filter(cl => cl.courseId === courseId);
+
+  // ── Course CRUD ────────────────────────────────────
+  const handleCreateCourse = async (e) => {
     e.preventDefault();
-    if (!newCourseCode || !newCourseName) return;
-
-    const newCourse = {
-      id: Date.now(),
-      code: newCourseCode.toUpperCase(),
-      name: newCourseName,
-      lecturerId: null,
-      trimesterId: null
-    };
-
-    setCourses([...courses, newCourse]);
-    setNewCourseCode('');
-    setNewCourseName('');
-    setIsCreateModalOpen(false);
+    setError('');
+    const res = await fetch(COURSE_API, {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({
+        courseCode: courseForm.courseCode.toUpperCase().trim(),
+        courseName: courseForm.courseName.trim(),
+      }),
+    });
+    if (!res.ok) { const d = await res.json(); setError(d.message || 'Error'); return; }
+    setCourseForm({ courseCode: '', courseName: '' });
+    setModal(null);
+    fetchAll();
   };
 
-  const handleOpenEditCourse = (course) => {
-    setSelectedCourse(course);
-    setNewCourseCode(course.code);
-    setNewCourseName(course.name);
-    setIsEditModalOpen(true);
-  };
-
-  const handleEditCourse = (e) => {
+  const handleEditCourse = async (e) => {
     e.preventDefault();
-    if (!newCourseCode || !newCourseName || !selectedCourse) return;
-
-    setCourses(courses.map(c => 
-      c.id === selectedCourse.id 
-        ? { ...c, code: newCourseCode.toUpperCase(), name: newCourseName } 
-        : c
-    ));
-    setIsEditModalOpen(false);
-    setSelectedCourse(null);
-    setNewCourseCode('');
-    setNewCourseName('');
+    setError('');
+    const res = await fetch(`${COURSE_API}/${editTarget.courseId}`, {
+      method: 'PUT',
+      headers: h,
+      body: JSON.stringify({
+        courseCode: courseForm.courseCode.toUpperCase().trim(),
+        courseName: courseForm.courseName.trim(),
+      }),
+    });
+    if (!res.ok) { const d = await res.json(); setError(d.message || 'Error'); return; }
+    setModal(null);
+    fetchAll();
   };
 
-  const handleOpenDeleteCourse = (course) => {
-    setSelectedCourse(course);
-    setIsDeleteModalOpen(true);
+  const handleDeleteCourse = async (courseId) => {
+    if (!window.confirm('Delete this course?')) return;
+    const res = await fetch(`${COURSE_API}/${courseId}`, { method: 'DELETE', headers: h });
+    if (!res.ok) { const d = await res.json(); alert(d.message || 'Error'); return; }
+    fetchAll();
   };
 
-  const handleDeleteCourse = () => {
-    if (!selectedCourse) return;
-    setCourses(courses.filter(c => c.id !== selectedCourse.id));
-    setIsDeleteModalOpen(false);
-    setSelectedCourse(null);
-  };
-
-  const handleOpenAssignLecturer = (course) => {
-    setSelectedCourse(course);
-    setSelectedLecturerId(course.lecturerId || '');
-    setIsAssignLecturerModalOpen(true);
-  };
-
-  const submitAssignLecturer = (e) => {
+  // ── Class CRUD ─────────────────────────────────────
+  const handleCreateClass = async (e) => {
     e.preventDefault();
-    if (!selectedCourse) return;
-
-    setCourses(courses.map(c => 
-      c.id === selectedCourse.id ? { ...c, lecturerId: selectedLecturerId } : c
-    ));
-    setIsAssignLecturerModalOpen(false);
-    setSelectedCourse(null);
+    setError('');
+    const res = await fetch(CLASS_API, {
+      method: 'POST',
+      headers: h,
+      body: JSON.stringify({
+        classCode:  classForm.classCode.trim().toUpperCase(),
+        courseId:   Number(classForm.courseId),
+        semesterId: Number(classForm.semesterId),
+      }),
+    });
+    if (!res.ok) { const d = await res.json(); setError(d.message || 'Error'); return; }
+    setModal(null);
+    fetchAll();
   };
 
-  const handleOpenAssignTrimester = (course) => {
-    setSelectedCourse(course);
-    setSelectedTrimesterId(course.trimesterId || '');
-    setIsAssignTrimesterModalOpen(true);
+  const openCreateClass = (course) => {
+    setClassForm({ classCode: '', courseId: String(course.courseId), semesterId: '' });
+    setError('');
+    setModal('createClass');
   };
 
-  const submitAssignTrimester = (e) => {
+  const openEditClass = (cl) => {
+    setEditTarget(cl);
+    setClassForm({
+      classCode:  cl.classCode,
+      courseId:   String(cl.courseId || ''),
+      semesterId: String(cl.semesterId || ''),
+    });
+    setError('');
+    setModal('editClass');
+  };
+
+  const handleEditClass = async (e) => {
     e.preventDefault();
-    if (!selectedCourse) return;
-
-    setCourses(courses.map(c => 
-      c.id === selectedCourse.id ? { ...c, trimesterId: selectedTrimesterId } : c
-    ));
-    setIsAssignTrimesterModalOpen(false);
-    setSelectedCourse(null);
+    setError('');
+    const res = await fetch(`${CLASS_API}/${editTarget.classId}`, {
+      method: 'PUT',
+      headers: h,
+      body: JSON.stringify({
+        classCode:  classForm.classCode.trim().toUpperCase(),
+        courseId:   classForm.courseId   ? Number(classForm.courseId)   : null,
+        semesterId: classForm.semesterId ? Number(classForm.semesterId) : null,
+      }),
+    });
+    if (!res.ok) { const d = await res.json(); setError(d.message || 'Error'); return; }
+    setModal(null);
+    fetchAll();
   };
 
-  // Helper getters
-  const getLecturerName = (id) => MOCK_LECTURERS.find(l => l.id === id)?.name;
-  const getTrimesterName = (id) => MOCK_TRIMESTERS.find(t => t.id === id)?.name;
+  const openAssignLecturer = (cl) => {
+    setAssignTarget(cl);
+    setSelectedLecturerId(cl.lecturerId ? String(cl.lecturerId) : '');
+    setError('');
+    setModal('assignLecturer');
+  };
 
+  const handleAssignLecturer = async (e) => {
+    e.preventDefault();
+    setError('');
+    const res = await fetch(`${CLASS_API}/${assignTarget.classId}/lecturer`, {
+      method: 'PUT',
+      headers: h,
+      body: JSON.stringify({ lecturerId: selectedLecturerId ? Number(selectedLecturerId) : null }),
+    });
+    if (!res.ok) { const d = await res.json(); setError(d.message || 'Error'); return; }
+    setModal(null);
+    fetchAll();
+  };
+
+  const handleDeleteClass = async (classId) => {
+    if (!window.confirm('Delete this class? All associated groups will also be affected.')) return;
+    const res = await fetch(`${CLASS_API}/${classId}`, { method: 'DELETE', headers: h });
+    if (!res.ok) { const d = await res.json(); alert(d.message || 'Error deleting class'); return; }
+    fetchAll();
+  };
+
+  const openEditCourse = (course) => {
+    setEditTarget(course);
+    setCourseForm({ courseCode: course.courseCode, courseName: course.courseName });
+    setError('');
+    setModal('editCourse');
+  };
+
+  const closeModal = () => { setModal(null); setError(''); };
+
+  // ── Render ─────────────────────────────────────────
   return (
-    <div className="course-management">
-      {/* HEADER: View Course List & Create button */}
-      <div className="header-section">
-        <h2 className="header-title">
-          <BookOpen className="header-icon" size={28} />
-          Course Management
-        </h2>
-        <button 
-          className="create-btn" 
-          onClick={() => setIsCreateModalOpen(true)}
-        >
-          <Plus size={20} />
-          Create Course
-        </button>
+    <div className="ac-page">
+
+      {/* ── PAGE HEADER ── */}
+      <div className="ac-header">
+        <div className="ac-header-left">
+          <h1><BookOpen size={22} /> Course &amp; Class Management</h1>
+          <p>Manage courses and their associated classes for each semester</p>
+        </div>
+        <div className="ac-header-actions">
+          <button className="ac-btn ac-btn-outline"
+            onClick={() => { setClassForm({ classCode: '', courseId: '', semesterId: '' }); setError(''); setModal('createClass'); }}>
+            <School size={15} /> New Class
+          </button>
+          <button className="ac-btn ac-btn-primary"
+            onClick={() => { setCourseForm({ courseCode: '', courseName: '' }); setError(''); setModal('createCourse'); }}>
+            <Plus size={15} /> New Course
+          </button>
+        </div>
       </div>
 
-      {/* VIEW COURSE LIST */}
-      <div className="course-list-container">
-        <table className="course-table">
-          <thead>
-            <tr>
-              <th>Course Code</th>
-              <th>Course Name</th>
-              <th>Assigned Lecturer</th>
-              <th>Trimester</th>
-              <th>Assignments</th>
-            </tr>
-          </thead>
-          <tbody>
-            {courses.length === 0 ? (
+      {/* ── STATS ── */}
+      <div className="ac-stats">
+        <div className="ac-stat"><span className="ac-stat-val">{courses.length}</span><span>Courses</span></div>
+        <div className="ac-stat"><span className="ac-stat-val">{semesters.length}</span><span>Semesters</span></div>
+        <div className="ac-stat"><span className="ac-stat-val">{classes.length}</span><span>Classes</span></div>
+      </div>
+
+      {/* ── COURSE TABLE with expandable classes ── */}
+      <div className="ac-table-wrap">
+        <div className="ac-table-head-bar">
+          <span className="ac-table-title"><Layers size={16} /> All Courses</span>
+        </div>
+
+        {loading ? (
+          <div className="ac-loading">Loading…</div>
+        ) : courses.length === 0 ? (
+          <div className="ac-empty">
+            <div className="ac-empty-icon">📚</div>
+            <p>No courses yet</p>
+            <span>Click "New Course" to get started.</span>
+          </div>
+        ) : (
+          <table className="ac-table">
+            <thead>
               <tr>
-                <td colSpan="5" style={{ textAlign: 'center', padding: '2rem', color: '#94a3b8' }}>
-                  No courses found. Create one to get started.
-                </td>
+                <th style={{ width: 32 }} />
+                <th>Code</th>
+                <th>Course Name</th>
+                <th>Classes</th>
+                <th>Actions</th>
               </tr>
-            ) : (
-              courses.map(course => (
-                <tr key={course.id}>
-                  <td>
-                    <span className="course-code">{course.code}</span>
-                  </td>
-                  <td>
-                    <span className="course-name">{course.name}</span>
-                  </td>
-                  <td>
-                    {course.lecturerId ? (
-                      <span className="badge assigned">
-                        <CheckCircle2 size={14} />
-                        {getLecturerName(course.lecturerId)}
-                      </span>
-                    ) : (
-                      <span className="badge unassigned">
-                        <AlertCircle size={14} />
-                        Unassigned
-                      </span>
+            </thead>
+            <tbody>
+              {courses.map((course) => {
+                const expanded = expandedCourseId === course.courseId;
+                const cls = classesOf(course.courseId);
+                return (
+                  <React.Fragment key={course.courseId}>
+                    {/* Course row */}
+                    <tr
+                      className={`ac-course-row ${expanded ? 'ac-course-row--active' : ''}`}
+                      onClick={() => setExpandedCourseId(expanded ? null : course.courseId)}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <td>
+                        <span className="ac-chevron">
+                          {expanded ? <ChevronDown size={15} /> : <ChevronRight size={15} />}
+                        </span>
+                      </td>
+                      <td><span className="ac-code-badge">{course.courseCode}</span></td>
+                      <td className="ac-course-name">{course.courseName}</td>
+                      <td>
+                        <span className="ac-class-count">{cls.length} class{cls.length !== 1 ? 'es' : ''}</span>
+                      </td>
+                      <td onClick={(e) => e.stopPropagation()}>
+                        <div className="ac-actions">
+                          <button className="ac-action-btn ac-action-add"
+                            title="Add Class"
+                            onClick={() => openCreateClass(course)}>
+                            <Plus size={13} /> Class
+                          </button>
+                          <button className="ac-action-btn ac-action-edit"
+                            title="Edit Course"
+                            onClick={() => openEditCourse(course)}>
+                            <Edit size={13} />
+                          </button>
+                          <button className="ac-action-btn ac-action-del"
+                            title="Delete Course"
+                            onClick={() => handleDeleteCourse(course.courseId)}>
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+
+                    {/* Expanded: class list */}
+                    {expanded && (
+                      <tr className="ac-expand-row">
+                        <td colSpan={5} style={{ padding: 0 }}>
+                          <div className="ac-class-panel">
+                            <div className="ac-class-panel-header">
+                              <CalendarDays size={14} />
+                              Classes in <strong>{course.courseCode}</strong>
+                            </div>
+                            {cls.length === 0 ? (
+                              <div className="ac-class-empty">
+                                No classes yet —
+                                <button className="ac-link-btn" onClick={() => openCreateClass(course)}>
+                                  Add one now
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="ac-class-grid">
+                                {cls.map((cl) => (
+                                  <div key={cl.classId} className="ac-class-card">
+                                    <div className="ac-class-card-code">{cl.classCode}</div>
+                                    <div className="ac-class-card-sem">{cl.semesterCode}</div>
+                                    <button
+                                      className="ac-class-del-btn"
+                                      title="Delete class"
+                                      onClick={() => handleDeleteClass(cl.classId)}
+                                    >
+                                      <Trash2 size={11} />
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td>
-                    {course.trimesterId ? (
-                      <span className="badge assigned" style={{ color: '#8b5cf6', borderColor: 'rgba(139, 92, 246, 0.2)', backgroundColor: 'rgba(139, 92, 246, 0.1)' }}>
-                        <CalendarRange size={14} />
-                        {getTrimesterName(course.trimesterId)}
-                      </span>
-                    ) : (
-                      <span className="badge unassigned">
-                        <AlertCircle size={14} />
-                        Unassigned
-                      </span>
-                    )}
-                  </td>
-                  <td>
-                    <div className="action-buttons">
-                      <button 
-                        className="action-btn edit-course"
-                        onClick={() => handleOpenEditCourse(course)}
-                        title="Edit Course"
-                      >
-                        <Edit size={16} />
-                      </button>
-                      <button 
-                        className="action-btn assign-lecturer" 
-                        onClick={() => handleOpenAssignLecturer(course)}
-                        title="Assign Lecturer"
-                      >
-                        <UserPlus size={16} />
-                        Lecturer
-                      </button>
-                      <button 
-                        className="action-btn assign-trimester"
-                        onClick={() => handleOpenAssignTrimester(course)}
-                        title="Assign Trimester"
-                      >
-                        <CalendarPlus size={16} />
-                        Trimester
-                      </button>
-                      <button 
-                        className="action-btn delete-course"
-                        onClick={() => handleOpenDeleteCourse(course)}
-                        title="Delete Course"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
 
-      {/* --- MODALS --- */}
+      {/* ── Semesters section ── */}
+      <div className="ac-sem-section">
+        <div className="ac-table-head-bar">
+          <span className="ac-table-title"><CalendarDays size={16} /> Semesters</span>
+        </div>
+        <div className="ac-sem-grid">
+          {semesters.map((s) => (
+            <div key={s.semesterId} className="ac-sem-card">
+              <div className="ac-sem-code">{s.semesterCode}</div>
+              <div className="ac-sem-name">{s.semesterName}</div>
+            </div>
+          ))}
+        </div>
+      </div>
 
-      {/* 1. Create Course Modal */}
-      {isCreateModalOpen && (
-        <div className="modal-overlay" onClick={() => setIsCreateModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+      {/* ════════════ MODALS ════════════ */}
+
+      {/* Create Course */}
+      {modal === 'createCourse' && (
+        <div className="ac-overlay" onClick={closeModal}>
+          <div className="ac-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ac-modal-head">
+              <h3><BookOpen size={18} /> New Course</h3>
+              <button className="ac-modal-close" onClick={closeModal}><X size={18} /></button>
+            </div>
             <form onSubmit={handleCreateCourse}>
-              <div className="modal-header">
-                <h3><BookOpen size={20} /> Create New Course</h3>
-                <button type="button" className="close-btn" onClick={() => setIsCreateModalOpen(false)}>
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label htmlFor="courseCode">Course Code</label>
-                  <input 
-                    type="text" 
-                    id="courseCode"
-                    className="form-input" 
-                    placeholder="e.g. SWP391" 
-                    value={newCourseCode}
-                    onChange={(e) => setNewCourseCode(e.target.value)}
-                    required
-                  />
+              <div className="ac-modal-body">
+                <div className="ac-fg">
+                  <label>Course Code *</label>
+                  <input placeholder="e.g. SWP391" value={courseForm.courseCode}
+                    onChange={(e) => setCourseForm({ ...courseForm, courseCode: e.target.value })} required />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="courseName">Course Name</label>
-                  <input 
-                    type="text" 
-                    id="courseName"
-                    className="form-input" 
-                    placeholder="e.g. Software Development Project" 
-                    value={newCourseName}
-                    onChange={(e) => setNewCourseName(e.target.value)}
-                    required
-                  />
+                <div className="ac-fg">
+                  <label>Course Name *</label>
+                  <input placeholder="e.g. Software Project Management" value={courseForm.courseName}
+                    onChange={(e) => setCourseForm({ ...courseForm, courseName: e.target.value })} required />
                 </div>
+                {error && <div className="ac-error">⚠️ {error}</div>}
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-cancel" onClick={() => setIsCreateModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-submit">Create Course</button>
+              <div className="ac-modal-foot">
+                <button type="button" className="ac-btn ac-btn-ghost" onClick={closeModal}>Cancel</button>
+                <button type="submit" className="ac-btn ac-btn-primary">Create Course</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* 2. Edit Course Modal */}
-      {isEditModalOpen && selectedCourse && (
-        <div className="modal-overlay" onClick={() => setIsEditModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
+      {/* Edit Course */}
+      {modal === 'editCourse' && editTarget && (
+        <div className="ac-overlay" onClick={closeModal}>
+          <div className="ac-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ac-modal-head">
+              <h3><Edit size={18} /> Edit Course</h3>
+              <button className="ac-modal-close" onClick={closeModal}><X size={18} /></button>
+            </div>
             <form onSubmit={handleEditCourse}>
-              <div className="modal-header">
-                <h3><Edit size={20} /> Edit Course</h3>
-                <button type="button" className="close-btn" onClick={() => setIsEditModalOpen(false)}>
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label htmlFor="editCourseCode">Course Code</label>
-                  <input 
-                    type="text" 
-                    id="editCourseCode"
-                    className="form-input" 
-                    value={newCourseCode}
-                    onChange={(e) => setNewCourseCode(e.target.value)}
-                    required
-                  />
+              <div className="ac-modal-body">
+                <div className="ac-fg">
+                  <label>Course Code *</label>
+                  <input value={courseForm.courseCode}
+                    onChange={(e) => setCourseForm({ ...courseForm, courseCode: e.target.value })} required />
                 </div>
-                <div className="form-group">
-                  <label htmlFor="editCourseName">Course Name</label>
-                  <input 
-                    type="text" 
-                    id="editCourseName"
-                    className="form-input" 
-                    value={newCourseName}
-                    onChange={(e) => setNewCourseName(e.target.value)}
-                    required
-                  />
+                <div className="ac-fg">
+                  <label>Course Name *</label>
+                  <input value={courseForm.courseName}
+                    onChange={(e) => setCourseForm({ ...courseForm, courseName: e.target.value })} required />
                 </div>
+                {error && <div className="ac-error">⚠️ {error}</div>}
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-cancel" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-submit">Save Changes</button>
+              <div className="ac-modal-foot">
+                <button type="button" className="ac-btn ac-btn-ghost" onClick={closeModal}>Cancel</button>
+                <button type="submit" className="ac-btn ac-btn-primary">Save Changes</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* 3. Assign Lecturer Modal */}
-      {isAssignLecturerModalOpen && selectedCourse && (
-        <div className="modal-overlay" onClick={() => setIsAssignLecturerModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <form onSubmit={submitAssignLecturer}>
-              <div className="modal-header">
-                <h3><GraduationCap size={20} /> Assign Lecturer</h3>
-                <button type="button" className="close-btn" onClick={() => setIsAssignLecturerModalOpen(false)}>
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="modal-body">
-                <p style={{ color: '#94a3b8', margin: '0 0 10px 0', fontSize: '14px' }}>
-                  Assigning a lecturer for <strong>{selectedCourse.code} - {selectedCourse.name}</strong>
-                </p>
-                <div className="form-group">
-                  <label htmlFor="lecturerSelect">Select Lecturer</label>
-                  <select 
-                    id="lecturerSelect" 
-                    className="form-select"
-                    value={selectedLecturerId}
-                    onChange={(e) => setSelectedLecturerId(e.target.value)}
-                  >
-                    <option value="">-- No Lecturer Assigned --</option>
-                    {MOCK_LECTURERS.map(lecturer => (
-                      <option key={lecturer.id} value={lecturer.id}>
-                        {lecturer.name} ({lecturer.email})
+      {/* Create Class */}
+      {modal === 'createClass' && (
+        <div className="ac-overlay" onClick={closeModal}>
+          <div className="ac-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="ac-modal-head">
+              <h3><School size={18} /> New Class</h3>
+              <button className="ac-modal-close" onClick={closeModal}><X size={18} /></button>
+            </div>
+            <form onSubmit={handleCreateClass}>
+              <div className="ac-modal-body">
+                <div className="ac-fg">
+                  <label>Class Code *</label>
+                  <input placeholder="e.g. SE1901" value={classForm.classCode}
+                    onChange={(e) => setClassForm({ ...classForm, classCode: e.target.value })} required />
+                </div>
+                <div className="ac-fg">
+                  <label>Course *</label>
+                  <select value={classForm.courseId}
+                    onChange={(e) => setClassForm({ ...classForm, courseId: e.target.value })} required>
+                    <option value="">-- Select Course --</option>
+                    {courses.map((c) => (
+                      <option key={c.courseId} value={c.courseId}>
+                        {c.courseCode} — {c.courseName}
                       </option>
                     ))}
                   </select>
                 </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-cancel" onClick={() => setIsAssignLecturerModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-submit">Save Assignment</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* 3. Assign Trimester Modal */}
-      {isAssignTrimesterModalOpen && selectedCourse && (
-        <div className="modal-overlay" onClick={() => setIsAssignTrimesterModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()}>
-            <form onSubmit={submitAssignTrimester}>
-              <div className="modal-header">
-                <h3><CalendarRange size={20} /> Assign Trimester</h3>
-                <button type="button" className="close-btn" onClick={() => setIsAssignTrimesterModalOpen(false)}>
-                  <X size={20} />
-                </button>
-              </div>
-              <div className="modal-body">
-                <p style={{ color: '#94a3b8', margin: '0 0 10px 0', fontSize: '14px' }}>
-                  Assigning a trimester for <strong>{selectedCourse.code} - {selectedCourse.name}</strong>
-                </p>
-                <div className="form-group">
-                  <label htmlFor="trimesterSelect">Select Trimester</label>
-                  <select 
-                    id="trimesterSelect" 
-                    className="form-select"
-                    value={selectedTrimesterId}
-                    onChange={(e) => setSelectedTrimesterId(e.target.value)}
-                  >
-                    <option value="">-- No Trimester Assigned --</option>
-                    {MOCK_TRIMESTERS.map(trimester => (
-                      <option key={trimester.id} value={trimester.id}>
-                        {trimester.name}
+                <div className="ac-fg">
+                  <label>Semester *</label>
+                  <select value={classForm.semesterId}
+                    onChange={(e) => setClassForm({ ...classForm, semesterId: e.target.value })} required>
+                    <option value="">-- Select Semester --</option>
+                    {semesters.map((s) => (
+                      <option key={s.semesterId} value={s.semesterId}>
+                        {s.semesterCode} — {s.semesterName}
                       </option>
                     ))}
                   </select>
                 </div>
+                {error && <div className="ac-error">⚠️ {error}</div>}
               </div>
-              <div className="modal-footer">
-                <button type="button" className="btn-cancel" onClick={() => setIsAssignTrimesterModalOpen(false)}>Cancel</button>
-                <button type="submit" className="btn-submit">Save Assignment</button>
+              <div className="ac-modal-foot">
+                <button type="button" className="ac-btn ac-btn-ghost" onClick={closeModal}>Cancel</button>
+                <button type="submit" className="ac-btn ac-btn-primary">Create Class</button>
               </div>
             </form>
-          </div>
-        </div>
-      )}
-
-      {/* 5. Delete Course Modal */}
-      {isDeleteModalOpen && selectedCourse && (
-        <div className="modal-overlay" onClick={() => setIsDeleteModalOpen(false)}>
-          <div className="modal-content" onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
-            <div className="modal-header" style={{ borderBottomColor: 'rgba(239, 68, 68, 0.2)' }}>
-              <h3 style={{ color: '#ef4444' }}><Trash2 size={20} /> Confirm Deletion</h3>
-              <button type="button" className="close-btn" onClick={() => setIsDeleteModalOpen(false)}>
-                <X size={20} />
-              </button>
-            </div>
-            <div className="modal-body">
-              <p style={{ margin: 0, color: 'var(--text-primary)', lineHeight: '1.5' }}>
-                Are you sure you want to delete the course <strong>{selectedCourse.code} - {selectedCourse.name}</strong>?
-              </p>
-              <p style={{ margin: '10px 0 0 0', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                This action cannot be undone. All lecturer and trimester assignments will be removed.
-              </p>
-            </div>
-            <div className="modal-footer">
-              <button type="button" className="btn-cancel" onClick={() => setIsDeleteModalOpen(false)}>Cancel</button>
-              <button type="button" className="btn-submit" style={{ background: '#ef4444' }} onClick={handleDeleteCourse}>
-                Delete Course
-              </button>
-            </div>
           </div>
         </div>
       )}

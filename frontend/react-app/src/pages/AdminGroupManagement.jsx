@@ -1,452 +1,487 @@
 import { useEffect, useState } from "react";
 import "./AdminGroupManagement.css";
-import { useNavigate } from 'react-router-dom';
+import { useNavigate } from "react-router-dom";
 
-const API_URL = "/api/student_group";
+const API_URL      = "/api/student_group";
 const LECTURER_API = "/api/admin/users?roleCode=LECTURER&page=0&size=999";
-const ASSIGN_API = "/api/admin/groups";
-const MEMBER_API = "/api/groups";
+const ASSIGN_API   = "/api/admin/groups";
+const MEMBER_API   = "/api/groups";
+const COURSE_API   = "/api/courses";
+const SEMESTER_API = "/api/semesters";
+const CLASS_API    = "/api/classes";
 
 function AdminGroupManagement() {
-  const [groups, setGroups] = useState([]);
+  const [groups,   setGroups]   = useState([]);
   const [lecturers, setLecturers] = useState([]);
-  const [members, setMembers] = useState([]);
-  const [eligibleStudents, setEligibleStudents] = useState([]);
-  const [studentKeyword, setStudentKeyword] = useState("");
-  const [studentPage, setStudentPage] = useState(0);
+  const [members,  setMembers]  = useState([]);
+  const [eligibleStudents, setEligibleStudents]   = useState([]);
+  const [studentKeyword,   setStudentKeyword]     = useState("");
+  const [studentPage,      setStudentPage]        = useState(0);
   const [studentTotalPages, setStudentTotalPages] = useState(0);
   const navigate = useNavigate();
+
+  // Dropdown data
+  const [courses,   setCourses]   = useState([]);
+  const [semesters, setSemesters] = useState([]);
+  const [classes,   setClasses]   = useState([]);
+
   const [form, setForm] = useState({
     groupId: null,
-    classCode: "",
+    classId: null,
+    courseCode: "",
+    semesterCode: "",
     groupName: "",
-    courseCode: "",
-    semester: "",
   });
 
-  const [filter, setFilter] = useState({
-    courseCode: "",
-    semester: "",
-  });
-
+  const [filter, setFilter] = useState({ courseCode: "", semester: "" });
   const [error, setError] = useState("");
   const [showLecturerModal, setShowLecturerModal] = useState(false);
-  const [showMemberModal, setShowMemberModal] = useState(false);
+  const [showMemberModal,   setShowMemberModal]   = useState(false);
   const [selectedGroup, setSelectedGroup] = useState(null);
 
   const token = localStorage.getItem("token");
+  const h = { Authorization: `Bearer ${token}` };
 
+  /* ---- Initial load ---- */
   useEffect(() => {
     fetchGroups();
     fetchLecturers();
+    fetchCourses();
+    fetchSemesters();
   }, []);
 
+  /* ---- Cascade: fetch classes when course + semester selected ---- */
+  useEffect(() => {
+    if (form.courseCode && form.semesterCode) {
+      fetchClasses(form.courseCode, form.semesterCode);
+    } else {
+      setClasses([]);
+      setForm((p) => ({ ...p, classId: null }));
+    }
+  }, [form.courseCode, form.semesterCode]);
+
+  /* ---- API helper fetch ---- */
+  const apiFetch = (url, opts = {}) =>
+    fetch(url, { headers: h, ...opts });
+
   const fetchGroups = async () => {
-    let query = [];
-    if (filter.courseCode) query.push(`course_code=${filter.courseCode}`);
-    if (filter.semester) query.push(`semester=${filter.semester}`);
-
-    const url = query.length ? `${API_URL}?${query.join("&")}` : API_URL;
-
-    const res = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
+    let q = [];
+    if (filter.courseCode) q.push(`course_code=${filter.courseCode}`);
+    if (filter.semester)   q.push(`semester=${filter.semester}`);
+    const url = q.length ? `${API_URL}?${q.join("&")}` : API_URL;
+    const data = await (await apiFetch(url)).json();
     setGroups(data.data || []);
   };
 
   const fetchLecturers = async () => {
-    const res = await fetch(LECTURER_API, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
-    if (data.data && data.data.content) {
-      setLecturers(data.data.content);
-    } else if (Array.isArray(data.data)) {
-      setLecturers(data.data);
-    } else {
-      setLecturers([]);
-    }
+    const data = await (await apiFetch(LECTURER_API)).json();
+    if (data.data?.content)    setLecturers(data.data.content);
+    else if (Array.isArray(data.data)) setLecturers(data.data);
+    else setLecturers([]);
+  };
+
+  const fetchCourses = async () => {
+    const data = await (await apiFetch(COURSE_API)).json();
+    setCourses(data.data || []);
+  };
+
+  const fetchSemesters = async () => {
+    const data = await (await apiFetch(SEMESTER_API)).json();
+    setSemesters(data.data || []);
+  };
+
+  const fetchClasses = async (courseCode, semesterCode) => {
+    const data = await (await apiFetch(
+      `${CLASS_API}?courseCode=${courseCode}&semesterCode=${semesterCode}&size=999`
+    )).json();
+    setClasses(data.data?.content || []);
   };
 
   const fetchMembers = async (groupId) => {
-    const res = await fetch(`${MEMBER_API}/${groupId}/members`, {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    const data = await res.json();
+    const data = await (await apiFetch(`${MEMBER_API}/${groupId}/members`)).json();
     setMembers(data.data || []);
   };
 
-  const handleOpenLecturerModal = (group) => {
-    setSelectedGroup(group);
-    setShowLecturerModal(true);
+  const fetchEligibleStudents = async (groupId, keyword = "", p = 0) => {
+    try {
+      const res  = await apiFetch(
+        `/api/groups/${groupId}/members/search?keyword=${keyword}&page=${p}&size=5`
+      );
+      const data = await res.json();
+      setEligibleStudents(data.data.content);
+      setStudentTotalPages(data.data.totalPages);
+      setStudentPage(p);
+    } catch { /* silent */ }
   };
 
-  const handleCloseLecturerModal = () => {
-    setShowLecturerModal(false);
-    setSelectedGroup(null);
-  };
+  /* ---- Modal openers ---- */
+  const openLecturer = (g) => { setSelectedGroup(g); setShowLecturerModal(true); };
+  const closeLecturer = () => { setShowLecturerModal(false); setSelectedGroup(null); };
 
-  const handleOpenMemberModal = async (group) => {
-    setSelectedGroup(group);
-    await fetchMembers(group.groupId);
-    await fetchEligibleStudents(group.groupId);
+  const openMembers = async (g) => {
+    setSelectedGroup(g);
+    await fetchMembers(g.groupId);
+    await fetchEligibleStudents(g.groupId);
     setShowMemberModal(true);
   };
-
-  const handleCloseMemberModal = () => {
+  const closeMembers = () => {
     setShowMemberModal(false);
     setSelectedGroup(null);
     setMembers([]);
     setStudentKeyword("");
   };
 
+  /* ---- CRUD actions ---- */
   const handleAssignLecturer = async (lecturerId) => {
     if (!selectedGroup) return;
-
-    const res = await fetch(`${ASSIGN_API}/${selectedGroup.groupId}/lecturer`, {
+    const res = await apiFetch(`${ASSIGN_API}/${selectedGroup.groupId}/lecturer`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ lecturerId: lecturerId }),
+      headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ lecturerId }),
     });
-
-    if (res.ok) {
-      alert("Lecturer assigned successfully!");
-      handleCloseLecturerModal();
-      fetchGroups();
-    } else {
-      const err = await res.json();
-      alert("Failed to assign lecturer: " + (err.message || "Unknown error"));
-    }
+    if (res.ok) { alert("Lecturer assigned!"); closeLecturer(); fetchGroups(); }
+    else { const e = await res.json(); alert("Failed: " + (e.message || "Unknown")); }
   };
 
   const handleAddMember = async (userId) => {
     if (!selectedGroup) return;
-
-    const res = await fetch(`${MEMBER_API}/${selectedGroup.groupId}/members`, {
+    const res = await apiFetch(`${MEMBER_API}/${selectedGroup.groupId}/members`, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ userId: userId }),
+      headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
     });
-
     if (res.ok) {
-      alert("Member added successfully!");
+      alert("Member added!");
       await fetchMembers(selectedGroup.groupId);
-      setStudentKeyword("");
-      await fetchEligibleStudents(selectedGroup.groupId);
-    } else {
-      const err = await res.json();
-      alert("Failed to add member: " + (err.message || "Unknown error"));
-    }
-  };
-
-  const fetchEligibleStudents = async (groupId, keyword = "", p = 0) => {
-    try {
-      const res = await fetch(
-        `/api/groups/${groupId}/members/search?keyword=${keyword}&page=${p}&size=5`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!res.ok) {
-        throw new Error("Failed to search students");
-      }
-
-      const data = await res.json();
-      setEligibleStudents(data.data.content);
-      setStudentTotalPages(data.data.totalPages);
-      setStudentPage(p);
-    } catch (err) {
-      console.error("Search students error:", err);
-    }
+      await fetchEligibleStudents(selectedGroup.groupId, studentKeyword, studentPage);
+    } else { const e = await res.json(); alert("Failed: " + (e.message || "Unknown")); }
   };
 
   const handleRemoveMember = async (userId) => {
-    if (!selectedGroup) return;
-    if (!window.confirm("Remove this member?")) return;
-
-    const res = await fetch(`${MEMBER_API}/${selectedGroup.groupId}/members/${userId}`, {
+    if (!selectedGroup || !window.confirm("Remove this member?")) return;
+    const res = await apiFetch(`${MEMBER_API}/${selectedGroup.groupId}/members/${userId}`, {
       method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
     });
-
     if (res.ok) {
-      alert("Member removed successfully!");
+      alert("Member removed!");
       await fetchMembers(selectedGroup.groupId);
-    } else {
-      const err = await res.json();
-      alert("Failed to remove member: " + (err.message || "Unknown error"));
-    }
+      await fetchEligibleStudents(selectedGroup.groupId, studentKeyword, studentPage);
+    } else { const e = await res.json(); alert("Failed: " + (e.message || "Unknown")); }
   };
 
   const handleSetLeader = async (userId) => {
-    if (!selectedGroup) return;
-    if (!window.confirm("Set this member as leader?")) return;
-
-    const res = await fetch(`${MEMBER_API}/${selectedGroup.groupId}/leader`, {
+    if (!selectedGroup || !window.confirm("Set as leader?")) return;
+    const res = await apiFetch(`${MEMBER_API}/${selectedGroup.groupId}/leader`, {
       method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ userId: userId }),
+      headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify({ userId }),
     });
-
-    if (res.ok) {
-      alert("Leader set successfully!");
-      await fetchMembers(selectedGroup.groupId);
-    } else {
-      const err = await res.json();
-      alert("Failed to set leader: " + (err.message || "Unknown error"));
-    }
+    if (res.ok) { alert("Leader set!"); await fetchMembers(selectedGroup.groupId); }
+    else { const e = await res.json(); alert("Failed: " + (e.message || "Unknown")); }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
 
-    const method = form.groupId ? "PUT" : "POST";
-    const url = form.groupId
-      ? `${API_URL}/update/${form.groupId}`
-      : `${API_URL}/add`;
-
-    const res = await fetch(url, {
-      method,
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        classCode: form.classCode,
-        groupName: form.groupName,
-        courseCode: form.courseCode,
-        semester: form.semester,
-      }),
-    });
-
-    if (!res.ok) {
-      const err = await res.json();
-      if (res.status === 409) {
-        setError("Class Code already exists");
-      } else {
-        setError(err.message || "Error occurred");
-      }
+    if (!form.groupId && !form.classId) {
+      setError("Vui lòng chọn lớp học (Class).");
       return;
     }
 
-    alert(form.groupId ? "Group updated successfully!" : "Group created successfully!");
+    const method = form.groupId ? "PUT" : "POST";
+    const url    = form.groupId ? `${API_URL}/update/${form.groupId}` : `${API_URL}/add`;
+    const body   = form.groupId
+      ? { groupName: form.groupName }
+      : { classId: form.classId, groupName: form.groupName };
+
+    const res = await apiFetch(url, {
+      method,
+      headers: { ...h, "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) {
+      const e = await res.json();
+      setError(res.status === 409 ? "Group name already exists in this class." : (e.message || "Error occurred"));
+      return;
+    }
+    alert(form.groupId ? "Group updated!" : "Group created!");
     resetForm();
     fetchGroups();
   };
 
   const handleEdit = (g) => {
-    setForm({
-      groupId: g.groupId,
-      classCode: g.classCode,
-      groupName: g.groupName,
-      courseCode: g.courseCode,
-      semester: g.semester,
-    });
+    setForm({ groupId: g.groupId, classId: null, courseCode: g.courseCode || "", semesterCode: g.semesterCode || "", groupName: g.groupName });
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this group?")) return;
-
-    await fetch(`${API_URL}/delete/${id}`, {
-      method: "DELETE",
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
-
+    if (!window.confirm("Delete this group? This action cannot be undone.")) return;
+    await apiFetch(`${API_URL}/delete/${id}`, { method: "DELETE" });
     fetchGroups();
   };
 
   const resetForm = () => {
-    setForm({
-      groupId: null,
-      classCode: "",
-      groupName: "",
-      courseCode: "",
-      semester: "",
-    });
+    setForm({ groupId: null, classId: null, courseCode: "", semesterCode: "", groupName: "" });
+    setClasses([]);
     setError("");
   };
 
+  /* ---- Render ---- */
   return (
-    <div className="group-container">
-      <h3>Group Management</h3>
+    <div className="gm-page">
 
-      {/* FILTER */}
-      <div className="group-filter">
+      {/* PAGE HEADER */}
+      <div className="gm-header">
+        <div className="gm-header-left">
+          <h1>Group Management</h1>
+          <p>Create, manage and assign lecturers to student project groups</p>
+        </div>
+        <div className="gm-header-stats">
+          <div className="gm-stat-chip">
+            🎓 Total Groups: <span className="gm-stat-value">{groups.length}</span>
+          </div>
+          <div className="gm-stat-chip">
+            👤 Lecturers: <span className="gm-stat-value">{lecturers.length}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* FILTER TOOLBAR */}
+      <div className="gm-toolbar">
+        <span className="gm-toolbar-label">🔍 Filter</span>
         <input
           placeholder="Course Code"
           value={filter.courseCode}
-          onChange={(e) =>
-            setFilter({ ...filter, courseCode: e.target.value })
-          }
+          onChange={(e) => setFilter({ ...filter, courseCode: e.target.value })}
         />
         <input
           placeholder="Semester"
           value={filter.semester}
           onChange={(e) => setFilter({ ...filter, semester: e.target.value })}
         />
-        <button onClick={fetchGroups}>Filter</button>
-        <button
-          className="cancel"
-          onClick={() => {
-            setFilter({ courseCode: "", semester: "" });
-            fetchGroups();
-          }}
-        >
-          Clear
+        <button className="gm-btn gm-btn-primary" onClick={fetchGroups}>Apply</button>
+        <div className="gm-toolbar-sep" />
+        <button className="gm-btn gm-btn-ghost" onClick={() => { setFilter({ courseCode: "", semester: "" }); fetchGroups(); }}>
+          ✕ Clear
         </button>
       </div>
 
-      {/* FORM */}
-      <form className="group-form" onSubmit={handleSubmit}>
-        <input
-          placeholder="Class Code"
-          value={form.classCode}
-          disabled={!!form.groupId}
-          onChange={(e) => setForm({ ...form, classCode: e.target.value })}
-          required
-        />
-
-        <input
-          placeholder="Group Name"
-          value={form.groupName}
-          onChange={(e) => setForm({ ...form, groupName: e.target.value })}
-          required
-        />
-
-        <input
-          placeholder="Course Code"
-          value={form.courseCode}
-          onChange={(e) => setForm({ ...form, courseCode: e.target.value })}
-          required
-        />
-
-        <input
-          placeholder="Semester"
-          value={form.semester}
-          onChange={(e) => setForm({ ...form, semester: e.target.value })}
-          required
-        />
-
-        {error && <p className="error">{error}</p>}
-
-        <div className="form-actions">
-          <button type="submit">
-            {form.groupId ? "Update Group" : "Create Group"}
-          </button>
+      {/* CREATE / EDIT PANEL */}
+      <div className="gm-panel">
+        <div className="gm-panel-header">
+          <h2>
+            <div className="gm-panel-icon">{form.groupId ? "✏️" : "+"}</div>
+            {form.groupId ? "Edit Group" : "Create New Group"}
+          </h2>
           {form.groupId && (
-            <button type="button" className="cancel" onClick={resetForm}>
-              Cancel
+            <button className="gm-btn gm-btn-ghost" onClick={resetForm}>
+              ✕ Cancel
             </button>
           )}
         </div>
-      </form>
 
-      {/* TABLE */}
-      <table className="group-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Class Code</th>
-            <th>Group Name</th>
-            <th>Course</th>
-            <th>Semester</th>
-            <th>Lecturer</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          {groups.length > 0 ? (
-            groups.map((g, index) => (
-              <tr key={g.groupId}>
-                <td>{index + 1}</td>
-                <td><strong>{g.classCode}</strong></td>
-                <td>{g.groupName}</td>
-                <td>{g.courseCode}</td>
-                <td>{g.semester}</td>
-                <td>
-                  {g.lecturerName ? (
-                    <span className="lecturer-badge">{g.lecturerName}</span>
-                  ) : (
-                    <span className="no-lecturer">Not assigned</span>
-                  )}
-                </td>
-                <td>
-                  <button onClick={() => handleEdit(g)}>Edit</button>
-                  <button className="members-btn" onClick={() => handleOpenMemberModal(g)}>
-                    Members
-                  </button>
-                  <button className="choose-btn" onClick={() => handleOpenLecturerModal(g)}>
-                    Lecturer
-                  </button>
+        <div className="gm-panel-body">
+          <form onSubmit={handleSubmit}>
+            <div className="gm-form-grid">
 
-                  <button
-                    className="github-btn"
-                    onClick={() => navigate(`/admin/groups/${g.groupId}/github-config`)}
-                  >
-                    GitHub
-                  </button>
+              {!form.groupId ? (
+                <>
+                  {/* Course dropdown */}
+                  <div className="gm-form-group">
+                    <label>📚 Course *</label>
+                    <select
+                      value={form.courseCode}
+                      onChange={(e) =>
+                        setForm({ ...form, courseCode: e.target.value, semesterCode: "", classId: null })
+                      }
+                      required
+                    >
+                      <option value="">-- Select Course --</option>
+                      {courses.map((c) => (
+                        <option key={c.courseId} value={c.courseCode}>
+                          {c.courseCode} — {c.courseName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <button
-                    className="jira-btn"
-                    onClick={() => navigate(`/admin/groups/${g.groupId}/jira-config`)}
-                  >
-                    Jira
-                  </button>
+                  {/* Semester dropdown */}
+                  <div className="gm-form-group">
+                    <label>🗓️ Semester *</label>
+                    <select
+                      value={form.semesterCode}
+                      onChange={(e) =>
+                        setForm({ ...form, semesterCode: e.target.value, classId: null })
+                      }
+                      required
+                    >
+                      <option value="">-- Select Semester --</option>
+                      {semesters.map((s) => (
+                        <option key={s.semesterId} value={s.semesterCode}>
+                          {s.semesterCode} — {s.semesterName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <button className="danger" onClick={() => handleDelete(g.groupId)}>
-                    Delete
+                  {/* Class dropdown (filtered) */}
+                  <div className="gm-form-group">
+                    <label>🏫 Class *</label>
+                    <select
+                      value={form.classId || ""}
+                      onChange={(e) => setForm({ ...form, classId: Number(e.target.value) || null })}
+                      required
+                      disabled={classes.length === 0}
+                    >
+                      <option value="">
+                        {form.courseCode && form.semesterCode
+                          ? classes.length === 0
+                            ? "— No classes found —"
+                            : "-- Select Class --"
+                          : "— Select Course & Semester first —"}
+                      </option>
+                      {classes.map((cls) => (
+                        <option key={cls.classId} value={cls.classId}>
+                          {cls.classCode}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </>
+              ) : (
+                <div className="gm-form-group">
+                  <label>🏫 Current Class</label>
+                  <input
+                    value={`${form.courseCode} / ${form.semesterCode}`}
+                    disabled
+                  />
+                </div>
+              )}
+
+              {/* Group Name */}
+              <div className="gm-form-group">
+                <label>👥 Group Name *</label>
+                <input
+                  placeholder="e.g. Team Alpha, G1, ..."
+                  value={form.groupName}
+                  onChange={(e) => setForm({ ...form, groupName: e.target.value })}
+                  required
+                />
+              </div>
+
+              {/* Error */}
+              {error && (
+                <div className="gm-form-error">
+                  ⚠️ {error}
+                </div>
+              )}
+
+              {/* Submit */}
+              <div className="gm-form-actions">
+                <button type="submit" className="gm-btn gm-btn-primary">
+                  {form.groupId ? "💾 Update Group" : "✚ Create Group"}
+                </button>
+                {form.groupId && (
+                  <button type="button" className="gm-btn gm-btn-ghost" onClick={resetForm}>
+                    Cancel
                   </button>
+                )}
+              </div>
+
+            </div>
+          </form>
+        </div>
+      </div>
+
+      {/* GROUP TABLE */}
+      <div className="gm-table-wrap">
+        <div className="gm-table-toolbar">
+          <div className="gm-table-title">
+            📋 All Groups
+            <span className="gm-badge-count">{groups.length}</span>
+          </div>
+        </div>
+
+        <table className="gm-table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Group</th>
+              <th>Course</th>
+              <th>Semester</th>
+              <th>Lecturer</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            {groups.length > 0 ? (
+              groups.map((g, i) => (
+                <tr key={g.groupId}>
+                  <td>{i + 1}</td>
+                  <td>
+                    <div className="gm-group-cell">
+                      <div className="gm-group-avatar">
+                        {g.groupName?.charAt(0).toUpperCase()}
+                      </div>
+                      <div>
+                        <div className="gm-group-name">{g.groupName}</div>
+                        <div className="gm-group-class">{g.classCode}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td>
+                    <span className="gm-tag gm-tag-blue">{g.courseCode}</span>
+                  </td>
+                  <td>
+                    <span className="gm-tag gm-tag-orange">{g.semesterCode || g.semester}</span>
+                  </td>
+                  <td>
+                    {g.lecturerName
+                      ? <span className="gm-tag gm-tag-green">👤 {g.lecturerName}</span>
+                      : <span className="gm-tag gm-tag-gray">Not assigned</span>}
+                  </td>
+                  <td>
+                    <div className="gm-actions">
+                      <button className="gm-action-btn gm-action-edit"     onClick={() => handleEdit(g)}>✏️ Edit</button>
+                      <button className="gm-action-btn gm-action-members"  onClick={() => openMembers(g)}>👥 Members</button>
+                      <button className="gm-action-btn gm-action-lecturer" onClick={() => openLecturer(g)}>🎓 Lecturer</button>
+                      <button className="gm-action-btn gm-action-github"   onClick={() => navigate(`/admin/groups/${g.groupId}/github-config`)}>⚙️ GitHub</button>
+                      <button className="gm-action-btn gm-action-jira"     onClick={() => navigate(`/admin/groups/${g.groupId}/jira-config`)}>📋 Jira</button>
+                      <button className="gm-action-btn gm-action-delete"   onClick={() => handleDelete(g.groupId)}>🗑️ Delete</button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            ) : (
+              <tr>
+                <td colSpan="6">
+                  <div className="gm-empty">
+                    <div className="gm-empty-icon">📂</div>
+                    <p>No groups found</p>
+                    <span>Create a new group using the form above.</span>
+                  </div>
                 </td>
               </tr>
-            ))
-          ) : (
-            <tr>
-              <td colSpan="7" style={{ textAlign: "center", padding: "32px", color: "var(--text-tertiary)" }}>
-                No groups found
-              </td>
-            </tr>
-          )}
-        </tbody>
-      </table>
+            )}
+          </tbody>
+        </table>
+      </div>
 
-      {/* MODAL - LECTURER SELECTION */}
+      {/* ---- LECTURER MODAL ---- */}
       {showLecturerModal && (
-        <div className="modal-overlay" onClick={handleCloseLecturerModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Assign Lecturer - {selectedGroup?.groupName}</h3>
-              <button className="close-btn" onClick={handleCloseLecturerModal}>
-                ×
-              </button>
+        <div className="gm-modal-overlay" onClick={closeLecturer}>
+          <div className="gm-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="gm-modal-head">
+              <h3>
+                🎓 Assign Lecturer
+                <span className="gm-modal-tag">{selectedGroup?.groupName}</span>
+              </h3>
+              <button className="gm-modal-close" onClick={closeLecturer}>×</button>
             </div>
-
-            <div className="modal-body">
-              <table className="lecturer-table">
+            <div className="gm-modal-body">
+              <table className="gm-inner-table">
                 <thead>
                   <tr>
                     <th>#</th>
@@ -457,32 +492,25 @@ function AdminGroupManagement() {
                   </tr>
                 </thead>
                 <tbody>
-                  {lecturers.length > 0 ? (
-                    lecturers.map((lect, index) => (
-                      <tr key={lect.userId}>
-                        <td>{index + 1}</td>
-                        <td>{lect.fullName}</td>
-                        <td>{lect.username}</td>
-                        <td>{lect.email}</td>
-                        <td>
-                          <button
-                            className="assign-btn"
-                            onClick={() => handleAssignLecturer(lect.userId)}
-                            disabled={selectedGroup?.lecturerId === lect.userId}
-                          >
-                            {selectedGroup?.lecturerId === lect.userId
-                              ? "Assigned"
-                              : "Assign"}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan="5" style={{ textAlign: "center", padding: "32px" }}>
-                        No lecturers found
+                  {lecturers.length > 0 ? lecturers.map((l, i) => (
+                    <tr key={l.userId}>
+                      <td>{i + 1}</td>
+                      <td><strong>{l.fullName}</strong></td>
+                      <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>@{l.username}</td>
+                      <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>{l.email}</td>
+                      <td>
+                        <button
+                          className="gm-assign-btn"
+                          onClick={() => handleAssignLecturer(l.userId)}
+                          disabled={selectedGroup?.lecturerId === l.userId}
+                          style={selectedGroup?.lecturerId === l.userId ? { background: "rgba(16,185,129,0.15)", color: "#059669" } : {}}
+                        >
+                          {selectedGroup?.lecturerId === l.userId ? "✓ Assigned" : "Assign"}
+                        </button>
                       </td>
                     </tr>
+                  )) : (
+                    <tr className="gm-no-data"><td colSpan="5">No lecturers found</td></tr>
                   )}
                 </tbody>
               </table>
@@ -491,22 +519,28 @@ function AdminGroupManagement() {
         </div>
       )}
 
-      {/* MODAL - MEMBER MANAGEMENT */}
+      {/* ---- MEMBER MODAL ---- */}
       {showMemberModal && (
-        <div className="modal-overlay" onClick={handleCloseMemberModal}>
-          <div className="modal-content modal-large" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>Manage Members - {selectedGroup?.groupName}</h3>
-              <button className="close-btn" onClick={handleCloseMemberModal}>
-                ×
-              </button>
+        <div className="gm-modal-overlay" onClick={closeMembers}>
+          <div className="gm-modal gm-modal-lg" onClick={(e) => e.stopPropagation()}>
+            <div className="gm-modal-head">
+              <h3>
+                👥 Manage Members
+                <span className="gm-modal-tag">{selectedGroup?.groupName}</span>
+              </h3>
+              <button className="gm-modal-close" onClick={closeMembers}>×</button>
             </div>
 
-            <div className="modal-body">
+            <div className="gm-modal-body">
               {/* Current Members */}
-              <div className="members-section">
-                <h4>Current Members ({members.length})</h4>
-                <table className="member-table">
+              <div className="gm-modal-section">
+                <div className="gm-section-header">
+                  <div className="gm-section-title">
+                    <div className="gm-section-dot" style={{ background: "#7c3aed" }} />
+                    Current Members ({members.length})
+                  </div>
+                </div>
+                <table className="gm-inner-table">
                   <thead>
                     <tr>
                       <th>#</th>
@@ -518,66 +552,65 @@ function AdminGroupManagement() {
                     </tr>
                   </thead>
                   <tbody>
-                    {members.length > 0 ? (
-                      members.map((member, index) => (
-                        <tr key={member.userId}>
-                          <td>{index + 1}</td>
-                          <td>{member.fullName}</td>
-                          <td>{member.username}</td>
-                          <td>{member.email}</td>
-                          <td>
-                            {member.memberRole === "LEADER" ? (
-                              <span className="leader-badge">Leader</span>
-                            ) : (
-                              <span className="member-badge">Member</span>
-                            )}
-                          </td>
-                          <td>
-                            {member.memberRole !== "LEADER" && (
-                              <button
-                                className="leader-btn"
-                                onClick={() => handleSetLeader(member.userId)}
-                              >
-                                Set Leader
+                    {members.length > 0 ? members.map((m, i) => (
+                      <tr key={m.userId}>
+                        <td>{i + 1}</td>
+                        <td><strong>{m.fullName}</strong></td>
+                        <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>@{m.username}</td>
+                        <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>{m.email}</td>
+                        <td>
+                          {m.memberRole === "LEADER"
+                            ? <span className="gm-role-leader">⭐ Leader</span>
+                            : <span className="gm-role-member">Member</span>}
+                        </td>
+                        <td>
+                          <div style={{ display: "flex", gap: 6 }}>
+                            {m.memberRole !== "LEADER" && (
+                              <button className="gm-action-btn gm-action-jira" style={{ fontSize: 11 }}
+                                onClick={() => handleSetLeader(m.userId)}>
+                                ⭐ Set Leader
                               </button>
                             )}
-                            <button
-                              className="remove-btn"
-                              onClick={() => handleRemoveMember(member.userId)}
-                            >
+                            <button className="gm-action-btn gm-action-delete" style={{ fontSize: 11 }}
+                              onClick={() => handleRemoveMember(m.userId)}>
                               Remove
                             </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="6" style={{ textAlign: "center", padding: "24px" }}>
-                          No members yet
+                          </div>
                         </td>
                       </tr>
+                    )) : (
+                      <tr className="gm-no-data"><td colSpan="6">No members yet</td></tr>
                     )}
                   </tbody>
                 </table>
               </div>
 
-              {/* Add Member */}
-              <div className="add-member-section">
-                <h4>Add Student</h4>
+              <div className="gm-divider" />
 
-                <input
-                  type="text"
-                  placeholder="Search by name or username..."
-                  value={studentKeyword}
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    setStudentKeyword(value);
-                    fetchEligibleStudents(selectedGroup.groupId, value.trim(), 0);
-                  }}
-                  className="search-input"
-                />
+              {/* Add Students */}
+              <div className="gm-modal-section">
+                <div className="gm-section-header">
+                  <div className="gm-section-title">
+                    <div className="gm-section-dot" style={{ background: "#10b981" }} />
+                    Add Students
+                  </div>
+                </div>
 
-                <table className="student-table">
+                <div className="gm-search-wrap">
+                  <span className="gm-search-icon">🔍</span>
+                  <input
+                    type="text"
+                    placeholder="Search by name or username..."
+                    value={studentKeyword}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setStudentKeyword(v);
+                      fetchEligibleStudents(selectedGroup.groupId, v.trim(), 0);
+                    }}
+                  />
+                </div>
+
+                <table className="gm-inner-table">
                   <thead>
                     <tr>
                       <th>#</th>
@@ -588,42 +621,32 @@ function AdminGroupManagement() {
                     </tr>
                   </thead>
                   <tbody>
-                    {eligibleStudents.length > 0 ? (
-                      eligibleStudents.map((student, index) => (
-                        <tr key={student.userId}>
-                          <td>{index + 1}</td>
-                          <td>{student.fullName}</td>
-                          <td>{student.username}</td>
-                          <td>{student.email}</td>
-                          <td>
-                            <button
-                              className="add-btn"
-                              onClick={() => handleAddMember(student.userId)}
-                            >
-                              Add
-                            </button>
-                          </td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan="5" style={{ textAlign: "center", padding: "24px" }}>
-                          No eligible students
+                    {eligibleStudents.length > 0 ? eligibleStudents.map((s, i) => (
+                      <tr key={s.userId}>
+                        <td>{i + 1}</td>
+                        <td><strong>{s.fullName}</strong></td>
+                        <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>@{s.username}</td>
+                        <td style={{ color: "var(--text-secondary)", fontSize: 13 }}>{s.email}</td>
+                        <td>
+                          <button className="gm-action-btn gm-action-lecturer" style={{ fontSize: 11 }}
+                            onClick={() => handleAddMember(s.userId)}>
+                            + Add
+                          </button>
                         </td>
                       </tr>
+                    )) : (
+                      <tr className="gm-no-data"><td colSpan="5">No eligible students found</td></tr>
                     )}
                   </tbody>
                 </table>
 
                 {studentTotalPages > 1 && (
-                  <div className="pagination">
+                  <div className="gm-pagination">
                     {Array.from({ length: studentTotalPages }, (_, i) => (
                       <button
                         key={i}
-                        className={i === studentPage ? "active" : ""}
-                        onClick={() =>
-                          fetchEligibleStudents(selectedGroup.groupId, studentKeyword, i)
-                        }
+                        className={i === studentPage ? "gm-page-active" : ""}
+                        onClick={() => fetchEligibleStudents(selectedGroup.groupId, studentKeyword, i)}
                       >
                         {i + 1}
                       </button>
@@ -635,6 +658,7 @@ function AdminGroupManagement() {
           </div>
         </div>
       )}
+
     </div>
   );
 }
