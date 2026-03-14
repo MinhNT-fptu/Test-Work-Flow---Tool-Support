@@ -7,13 +7,13 @@
 /* SIDEBAR */
 .sidebar {
   width: 280px;
-  background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
-  color: white;
+  background: var(--bg-primary); /* Changed from dark gradient */
+  color: var(--text-primary);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   padding: 0;
-  border-right: 1px solid rgba(255, 255, 255, 0.1);
+  border-right: 1px solid var(--border);
   box-shadow: var(--shadow-md);
   position: sticky;
   top: 0;
@@ -25,8 +25,8 @@
   align-items: center;
   gap: var(--spacing-md);
   padding: var(--spacing-2xl);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(to right, rgba(255, 255, 255, 0.05), transparent);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
 }
 
 .logo-icons {
@@ -38,8 +38,8 @@
 .logo-icon {
   border-radius: var(--radius-sm);
   padding: 4px;
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-sm);
   transition: transform 0.3s ease;
 }
 
@@ -49,7 +49,7 @@
 }
 
 .github-icon {
-  color: #f8fafc; /* White/Gray for GitHub */
+  color: var(--text-primary); /* Sync with text instead of white */
   margin-left: -8px; /* Overlap effect */
   z-index: 1;
 }
@@ -75,7 +75,7 @@
   font-size: 18px;
   font-weight: 800;
   margin: 0;
-  background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
@@ -85,7 +85,7 @@
 .logo-subtitle {
   font-size: 11px;
   font-weight: 600;
-  color: #94a3b8;
+  color: var(--text-tertiary);
   letter-spacing: 1px;
   text-transform: uppercase;
   margin-top: 2px;
@@ -104,7 +104,7 @@
   align-items: center;
   gap: var(--spacing-lg);
   padding: var(--spacing-md) var(--spacing-2xl);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--text-secondary);
   text-decoration: none;
   font-size: 15px;
   font-weight: 500;
@@ -114,15 +114,15 @@
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-  border-left-color: #60a5fa;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border-left-color: var(--primary);
 }
 
 .nav-item.active {
-  background: rgba(60, 130, 246, 0.15);
-  color: #60a5fa;
-  border-left-color: #60a5fa;
+  background: var(--primary-light);
+  color: var(--primary-dark);
+  border-left-color: var(--primary);
 }
 
 .nav-icon {
@@ -130,21 +130,21 @@
   align-items: center;
   justify-content: center;
   transition: transform 0.2s ease, color 0.2s ease;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--text-tertiary);
 }
 
 .nav-item:hover .nav-icon {
   transform: scale(1.1);
-  color: #60a5fa;
+  color: var(--primary);
 }
 
 .nav-item.active .nav-icon {
-  color: #60a5fa;
+  color: var(--primary-dark);
 }
 
 .sidebar-footer {
   padding: var(--spacing-2xl);
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -155,19 +155,18 @@
   align-items: center;
   gap: var(--spacing-md);
   padding: var(--spacing-md) var(--spacing-lg);
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--bg-tertiary);
   border-radius: var(--radius-lg);
-  backdrop-filter: blur(10px);
 }
 
 .user-icon {
-  color: #60a5fa;
+  color: var(--primary);
 }
 
 .username {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -176,7 +175,7 @@
 .logout-btn {
   width: 100%;
   padding: var(--spacing-lg);
-  background: #ef4444;
+  background: var(--danger);
   color: white;
   border: none;
   border-radius: var(--radius-lg);
@@ -199,13 +198,13 @@
   left: -100%;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.1);
   transition: left 0.3s ease;
 }
 
 .logout-btn:hover {
-  background: #dc2626;
-  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+  background: var(--danger-dark);
+  box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
 }
 
 .logout-btn:hover:before {
