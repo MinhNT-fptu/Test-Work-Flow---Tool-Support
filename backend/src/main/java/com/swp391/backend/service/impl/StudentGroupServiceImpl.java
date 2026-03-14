@@ -4,6 +4,7 @@ import com.swp391.backend.dto.request.CreateGroupRequest;
 import com.swp391.backend.dto.response.StudentGroupResponse;
 import com.swp391.backend.entity.AcademicClass;
 import com.swp391.backend.entity.GroupMember;
+import com.swp391.backend.entity.GroupMemberId;
 import com.swp391.backend.entity.LecturerAssignment;
 import com.swp391.backend.entity.StudentGroup;
 import com.swp391.backend.exception.BusinessException;
@@ -14,6 +15,8 @@ import com.swp391.backend.repository.StudentGroupRepository;
 import com.swp391.backend.repository.UserRepository;
 import com.swp391.backend.security.SecurityService;
 import com.swp391.backend.service.StudentGroupService;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -136,6 +139,16 @@ public class StudentGroupServiceImpl implements StudentGroupService {
             resp.setLecturerId(la.getLecturerId());
             userRepository.findById(la.getLecturerId()).ifPresent(u -> resp.setLecturerName(u.getFullName()));
         });
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth != null) {
+            userRepository.findByUsername(auth.getName()).ifPresent(user -> {
+                GroupMemberId memberId = new GroupMemberId(group.getGroupId(), user.getUserId());
+                groupMemberRepository.findById(memberId).ifPresent(member -> {
+                    resp.setMemberRole(member.getMemberRole().getCode()); // "LEADER" or "MEMBER"
+                });
+            });
+        }
 
         return resp;
     }

@@ -131,7 +131,17 @@ public class GroupMemberServiceImpl implements GroupMemberService {
     public List<GroupMemberResponse> listMembers(Long groupId) {
         StudentGroup group = requireGroup(groupId);
         User actor = currentUser();
-        requireCanManageGroup(actor, group);
+        if (actor == null) throw new BusinessException("Unauthorized", 401);
+
+        String roleCode = actor.getRole() == null ? null : actor.getRole().getRoleCode();
+        if ("STUDENT".equalsIgnoreCase(roleCode)) {
+            boolean isMember = groupMemberRepository.existsByGroup_GroupIdAndUser_UserId(groupId, actor.getUserId());
+            if (!isMember) {
+                throw new BusinessException("Access denied. You are not a member of this group.", 403);
+            }
+        } else {
+            requireCanManageGroup(actor, group);
+        }
 
         List<GroupMember> members = groupMemberRepository.findByGroup_GroupId(groupId);
         List<GroupMemberResponse> result = new ArrayList<GroupMemberResponse>();
