@@ -52,8 +52,37 @@ public class StudentGroupServiceImpl implements StudentGroupService {
     @Transactional
     public StudentGroupResponse addStudentGroup(CreateGroupRequest request) {
 
-        AcademicClass clazz = academicClassRepository.findById(request.getClassId())
-                .orElseThrow(() -> new BusinessException("AcademicClass not found: " + request.getClassId(), 404));
+        AcademicClass clazz;
+
+        if (request.getClassId() != null) {
+            // Ưu tiên tìm bằng classId nếu có
+            clazz = academicClassRepository.findById(request.getClassId())
+                    .orElseThrow(() -> new BusinessException("AcademicClass not found: " + request.getClassId(), 404));
+        } else {
+            // Tra cứu lớp học bằng classCode + courseCode + semesterCode
+            String classCode  = request.getClassCode();
+            String courseCode = request.getCourseCode();
+            // Frontend có thể gửi "semester" hoặc "semesterCode"
+            String semCode    = request.getSemesterCode() != null ? request.getSemesterCode() : request.getSemester();
+
+            if (classCode == null || classCode.isBlank()) {
+                throw new BusinessException("classId hoặc classCode phải được cung cấp", 400);
+            }
+
+            if (courseCode != null && !courseCode.isBlank() && semCode != null && !semCode.isBlank()) {
+                clazz = academicClassRepository
+                        .findByClassCodeAndCourse_CourseCodeAndSemester_SemesterCode(
+                                classCode.trim(), courseCode.trim(), semCode.trim())
+                        .orElseThrow(() -> new BusinessException(
+                                "Không tìm thấy lớp học với mã: " + classCode
+                                        + " / môn: " + courseCode
+                                        + " / học kỳ: " + semCode, 404));
+            } else {
+                // Chỉ có classCode — tra cứu đơn giản (hoạt động tốt khi classCode là duy nhất)
+                clazz = academicClassRepository.findByClassCode(classCode.trim())
+                        .orElseThrow(() -> new BusinessException("Không tìm thấy lớp học với mã: " + classCode, 404));
+            }
+        }
 
         if (studentGroupRepository.existsByAcademicClass_ClassIdAndGroupName(clazz.getClassId(), request.getGroupName())) {
             throw new BusinessException("StudentGroup groupName already exists in this class: " + request.getGroupName(), 409);

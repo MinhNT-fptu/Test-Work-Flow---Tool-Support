@@ -14,6 +14,9 @@ import java.util.Optional;
 @Repository
 public interface AcademicClassRepository extends JpaRepository<AcademicClass, Long> {
     Optional<AcademicClass> findByClassCode(String classCode);
+
+    Optional<AcademicClass> findByClassCodeAndCourse_CourseCodeAndSemester_SemesterCode(
+            String classCode, String courseCode, String semesterCode);
     List<AcademicClass> findByCourse_CourseCodeAndSemester_SemesterCode(String courseCode, String semesterCode);
 
     @Query("SELECT c FROM AcademicClass c " +
