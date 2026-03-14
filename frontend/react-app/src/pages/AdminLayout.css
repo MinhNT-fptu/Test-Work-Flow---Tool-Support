@@ -20,14 +20,75 @@
   height: 100vh;
 }
 
-.logo {
-  font-size: 18px;
-  font-weight: 700;
+.logo-container {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
   padding: var(--spacing-2xl);
-  margin: 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  color: #60a5fa;
+  background: linear-gradient(to right, rgba(255, 255, 255, 0.05), transparent);
+}
+
+.logo-icons {
+  display: flex;
+  align-items: center;
+  position: relative;
+}
+
+.logo-icon {
+  border-radius: var(--radius-sm);
+  padding: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  transition: transform 0.3s ease;
+}
+
+.jira-icon {
+  color: #3b82f6; /* Blue for Jira/Trello */
+  z-index: 2;
+}
+
+.github-icon {
+  color: #f8fafc; /* White/Gray for GitHub */
+  margin-left: -8px; /* Overlap effect */
+  z-index: 1;
+}
+
+.logo-container:hover .logo-icon {
+  transform: translateY(-2px);
+}
+
+.logo-container:hover .github-icon {
+  transform: translateY(-2px) rotate(5deg) scale(1.05);
+}
+
+.logo-container:hover .jira-icon {
+  transform: translateY(-2px) rotate(-5deg) scale(1.05);
+}
+
+.logo-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.logo-title {
+  font-size: 18px;
+  font-weight: 800;
+  margin: 0;
+  background: linear-gradient(135deg, #60a5fa 0%, #a78bfa 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
   letter-spacing: 0.5px;
+}
+
+.logo-subtitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-top: 2px;
 }
 
 .nav-menu {
@@ -65,10 +126,20 @@
 }
 
 .nav-icon {
-  font-size: 20px;
   display: flex;
   align-items: center;
   justify-content: center;
+  transition: transform 0.2s ease, color 0.2s ease;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.nav-item:hover .nav-icon {
+  transform: scale(1.1);
+  color: #60a5fa;
+}
+
+.nav-item.active .nav-icon {
+  color: #60a5fa;
 }
 
 .sidebar-footer {
@@ -90,7 +161,7 @@
 }
 
 .user-icon {
-  font-size: 22px;
+  color: #60a5fa;
 }
 
 .username {
@@ -115,6 +186,10 @@
   transition: all 0.3s ease;
   position: relative;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
 }
 
 .logout-btn:before {
@@ -151,10 +226,14 @@
     width: 240px;
   }
 
-  .logo {
-    font-size: 16px;
+  .logo-container {
     padding: var(--spacing-xl);
   }
+
+  .logo-title {
+    font-size: 16px;
+  }
+
 
   .content {
     padding: var(--spacing-2xl);

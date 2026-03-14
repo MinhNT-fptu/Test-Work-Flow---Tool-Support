@@ -12,6 +12,10 @@ import JiraIssuesPreview from "./pages/JiraIssuesPreview";
 import LecturerGroupStats from "./pages/LecturerGroupStats";
 import LeaderDashboard from "./pages/LeaderDashboard";
 import StudentDashboard from "./pages/StudentDashboard";
+import AdminSemester from "./pages/AdminSemester";
+import AdminCourse from "./pages/AdminCourse";
+import AdminLecturer from "./pages/AdminLecturer";
+import AdminStudent from "./pages/AdminStudent";
 
 
 function App() {
@@ -29,6 +33,10 @@ function App() {
           <Route path="groups" element={<AdminGroupManagement />} />
           <Route path="groups/:groupId/github-config" element={<GitHubConfig />} />
           <Route path="groups/:groupId/jira-config" element={<JiraConfig />} />
+          <Route path="semester" element={<AdminSemester />} />
+          <Route path="course" element={<AdminCourse />} />
+          <Route path="lecturer" element={<AdminLecturer />} />
+          <Route path="student" element={<AdminStudent />} />
         </Route>
 
         {/* Lecturer */}
